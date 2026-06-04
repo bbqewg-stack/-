@@ -11,12 +11,21 @@ export async function GET(req: NextRequest) {
 
   const url = `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=${key}&geometry=true&attribute=true&crs=EPSG:4326&format=json&size=1&geomFilter=POINT(${lng}%20${lat})`;
 
+  const host = req.headers.get("host") ?? "localhost:3000";
+  const protocol = host.includes("localhost") ? "http" : "https";
+
+  // Referer 있는 요청 먼저 시도, 실패 시 없이 재시도
   try {
-    const host = req.headers.get("host") ?? "localhost:3000";
-    const res = await fetch(url, {
-      headers: { Referer: `http://${host}` },
+    let res = await fetch(url, {
+      headers: { Referer: `${protocol}://${host}` },
     });
-    const data = await res.json();
+    let data = await res.json();
+
+    // VWorld 오류 시 Referer 없이 재시도
+    if (data?.response?.status === "ERROR") {
+      res = await fetch(url);
+      data = await res.json();
+    }
 
     const features = data?.response?.result?.featureCollection?.features;
     if (!features?.length) return NextResponse.json(null);
