@@ -20,11 +20,12 @@ export async function POST(request: NextRequest) {
     panel_efficiency,
     capacity_kw,
     annual_generation_kwh,
+    polygons_data,
   } = body;
 
   const result = await query(
-    `INSERT INTO analyses (name, area_m2, coordinates, coverage_ratio, panel_efficiency, capacity_kw, annual_generation_kwh)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    `INSERT INTO analyses (name, area_m2, coordinates, coverage_ratio, panel_efficiency, capacity_kw, annual_generation_kwh, polygons_data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
     [
       name,
       area_m2,
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
       panel_efficiency,
       capacity_kw,
       annual_generation_kwh,
+      polygons_data ? JSON.stringify(polygons_data) : null,
     ]
   );
 

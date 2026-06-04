@@ -36,4 +36,7 @@ export async function initDb() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await query(`
+    ALTER TABLE analyses ADD COLUMN IF NOT EXISTS polygons_data TEXT
+  `);
 }

@@ -4,6 +4,12 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 
+interface PolygonData {
+  area: number;
+  type: 'inclusion' | 'exclusion';
+  coords: { lat: number; lng: number }[];
+}
+
 interface Analysis {
   id: number;
   name: string;
@@ -13,6 +19,31 @@ interface Analysis {
   coverage_ratio: number;
   panel_efficiency: number;
   created_at: string;
+  polygons_data: string | null;
+}
+
+function parsePolygons(raw: string | null): PolygonData[] | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+function PolygonBadge({ raw }: { raw: string | null }) {
+  const polygons = parsePolygons(raw);
+  if (!polygons) return null;
+  const inclusions = polygons.filter(p => p.type === 'inclusion').length;
+  const exclusions = polygons.filter(p => p.type === 'exclusion').length;
+  return (
+    <div className="flex gap-1 flex-wrap mt-0.5">
+      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+        포함 {inclusions}
+      </span>
+      {exclusions > 0 && (
+        <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">
+          제외 {exclusions}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export default function HistoryPage() {
@@ -214,7 +245,10 @@ export default function HistoryPage() {
                           </button>
                         </div>
                       ) : (
-                        a.name
+                        <>
+                          {a.name}
+                          <PolygonBadge raw={a.polygons_data} />
+                        </>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-600">

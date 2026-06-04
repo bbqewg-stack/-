@@ -91,6 +91,7 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
           panel_efficiency: panelEfficiency / 100,
           capacity_kw: result.capacityKw,
           annual_generation_kwh: result.annualGenerationKwh,
+          polygons_data: polygons,
         }),
       });
       if (res.ok) {
