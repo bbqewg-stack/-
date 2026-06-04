@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "edge";
+export const preferredRegion = ["icn1"]; // Seoul
+
 export async function GET(req: NextRequest) {
   const lat = req.nextUrl.searchParams.get("lat");
   const lng = req.nextUrl.searchParams.get("lng");
@@ -20,18 +23,13 @@ export async function GET(req: NextRequest) {
     });
 
     const text = await res.text();
-
-    // HTML 응답이면 오류 상세 반환 (디버깅용)
     if (text.trim().startsWith("<")) {
-      return NextResponse.json({ error: "vworld_html", preview: text.slice(0, 200) });
+      return NextResponse.json({ error: "vworld_html", preview: text.slice(0, 300) });
     }
 
     const data = JSON.parse(text);
     const features = data?.response?.result?.featureCollection?.features;
-
-    if (!features?.length) {
-      return NextResponse.json({ debug: data?.response });
-    }
+    if (!features?.length) return NextResponse.json({ debug: data?.response });
 
     const feature = features[0];
     return NextResponse.json({
