@@ -15,16 +15,12 @@ export async function GET(req: NextRequest) {
   const url = `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=${key}&geometry=true&attribute=true&crs=EPSG:4326&format=json&size=1&geomFilter=POINT(${lng}%20${lat})`;
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        Referer: "https://nu-three-96.vercel.app",
-        Origin: "https://nu-three-96.vercel.app",
-      },
-    });
-
+    // 헤더 없이 시도
+    const res = await fetch(url);
     const text = await res.text();
+
     if (text.trim().startsWith("<")) {
-      return NextResponse.json({ error: "vworld_html", preview: text.slice(0, 300) });
+      return NextResponse.json({ error: "vworld_html", status: res.status, preview: text.slice(0, 300) });
     }
 
     const data = JSON.parse(text);
