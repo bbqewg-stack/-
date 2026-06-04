@@ -401,16 +401,11 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
 
     setIsLoadingParcel(true);
     try {
-      const vworldKey = process.env.NEXT_PUBLIC_VWORLD_KEY;
-      const res = await fetch(
-        `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=${vworldKey}&geometry=true&attribute=true&crs=EPSG:4326&format=json&size=1&geomFilter=POINT(${lon}%20${lat})`
-      );
+      const res = await fetch(`/api/parcel-boundary?lat=${lat}&lng=${lon}`);
       const data = await res.json();
-      const features = data?.response?.result?.featureCollection?.features;
-      const parcelData = features?.length ? { geometry: features[0].geometry } : null;
 
-      if (parcelData?.geometry) {
-        const geo = parcelData.geometry;
+      if (data?.geometry) {
+        const geo = data.geometry;
 
         // GeoJSON [lng, lat] → Leaflet [lat, lng] 변환
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
