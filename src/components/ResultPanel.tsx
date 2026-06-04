@@ -14,6 +14,26 @@ interface ResultPanelProps {
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
 
+function getCentroid(coords: Coord[]): Coord {
+  return {
+    lat: coords.reduce((s, c) => s + c.lat, 0) / coords.length,
+    lng: coords.reduce((s, c) => s + c.lng, 0) / coords.length,
+  };
+}
+
+function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
+  const { lat: y, lng: x } = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const { lat: yi, lng: xi } = polygon[i];
+    const { lat: yj, lng: xj } = polygon[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 export default function ResultPanel({ polygons }: ResultPanelProps) {
   const [coverageRatio, setCoverageRatio] = useState(60);
   const [panelEfficiency, setPanelEfficiency] = useState(20);
@@ -25,6 +45,21 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
 
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
+
+  // 각 제외 폴리곤의 중심점이 속한 영역 찾기
+  const exclusionsByInclusion: (typeof exclusions)[] = inclusions.map(inc =>
+    exclusions.filter(exc => pointInPolygon(getCentroid(exc.coords), inc.coords))
+  );
+  const unattributedExclusions = exclusions.filter(exc =>
+    !inclusions.some(inc => pointInPolygon(getCentroid(exc.coords), inc.coords))
+  );
+
+  // 각 영역의 순유효면적 (해당 영역에 속한 제외면적 차감)
+  const inclusionNetAreas = inclusions.map((inc, i) => {
+    const exclArea = exclusionsByInclusion[i].reduce((sum, e) => sum + e.area, 0);
+    return Math.max(0, inc.area - exclArea);
+  });
+
   const inclusionArea = inclusions.reduce((sum, p) => sum + p.area, 0);
   const exclusionArea = exclusions.reduce((sum, p) => sum + p.area, 0);
   const totalArea = Math.max(0, inclusionArea - exclusionArea);
@@ -89,31 +124,57 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
         {/* 영역별 면적 내역 */}
         {(inclusions.length > 1 || exclusions.length > 0) && (
           <div className="mt-2 space-y-1 border-t pt-2">
-            {inclusions.map((p, i) => (
-              <div key={`inc-${i}`} className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <span
-                    style={{ background: POLYGON_COLORS[i % POLYGON_COLORS.length] }}
-                    className="inline-block w-2 h-2 rounded-full"
-                  />
-                  영역 {i + 1}
-                </span>
-                <span className="text-xs font-medium text-gray-700">
-                  {Math.round(p.area).toLocaleString("ko")} m²
-                </span>
-              </div>
-            ))}
-            {exclusions.map((p, i) => (
-              <div key={`exc-${i}`} className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs text-red-400">
-                  <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
-                  제외 {i + 1}
-                </span>
-                <span className="text-xs font-medium text-red-400">
-                  −{Math.round(p.area).toLocaleString("ko")} m²
-                </span>
-              </div>
-            ))}
+            {inclusions.map((p, i) => {
+              const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+              const excls = exclusionsByInclusion[i];
+              const netArea = inclusionNetAreas[i];
+              return (
+                <div key={`inc-${i}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full" />
+                      영역 {i + 1}
+                    </span>
+                    <span className="text-xs font-medium text-gray-700">
+                      {Math.round(p.area).toLocaleString("ko")} m²
+                    </span>
+                  </div>
+                  {excls.map((exc, j) => {
+                    const globalIdx = exclusions.indexOf(exc);
+                    return (
+                      <div key={`exc-${j}`} className="flex items-center justify-between pl-3">
+                        <span className="text-xs text-red-400">└ 제외 {globalIdx + 1}</span>
+                        <span className="text-xs font-medium text-red-400">
+                          −{Math.round(exc.area).toLocaleString("ko")} m²
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {excls.length > 0 && (
+                    <div className="flex items-center justify-between pl-3">
+                      <span className="text-xs text-blue-500">→ 유효</span>
+                      <span className="text-xs font-semibold text-blue-600">
+                        {Math.round(netArea).toLocaleString("ko")} m²
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {unattributedExclusions.map((p, i) => {
+              const globalIdx = exclusions.indexOf(p);
+              return (
+                <div key={`unatr-${i}`} className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs text-red-400">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-400" />
+                    제외 {globalIdx + 1}
+                  </span>
+                  <span className="text-xs font-medium text-red-400">
+                    −{Math.round(p.area).toLocaleString("ko")} m²
+                  </span>
+                </div>
+              );
+            })}
             {exclusions.length > 0 && (
               <div className="flex items-center justify-between border-t pt-1 mt-1">
                 <span className="text-xs font-semibold text-gray-600">유효 면적</span>
@@ -187,20 +248,27 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
             <div className="mt-3 border-t pt-3 space-y-2">
               <p className="text-xs font-semibold text-gray-500 mb-1">영역별 예상 용량</p>
               {inclusions.map((p, i) => {
+                const netArea = inclusionNetAreas[i];
                 const r = calculateSolar({
-                  areaSqm: p.area,
+                  areaSqm: netArea,
                   coverageRatio: coverageRatio / 100,
                   panelEfficiency: panelEfficiency / 100,
                   peakSunHours,
                   systemEfficiency: systemEfficiency / 100,
                 });
                 const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+                const hasExcl = exclusionsByInclusion[i].length > 0;
                 return (
                   <div key={i} className="bg-white rounded p-2 border">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full flex-shrink-0" />
                       <span className="text-xs font-medium text-gray-600">영역 {i + 1}</span>
-                      <span className="text-xs text-gray-400 ml-auto">{Math.round(p.area).toLocaleString("ko")} m²</span>
+                      <span className="text-xs text-gray-400 ml-auto">
+                        {hasExcl
+                          ? <>{Math.round(netArea).toLocaleString("ko")} m² <span className="text-red-300 line-through">{Math.round(p.area).toLocaleString("ko")}</span></>
+                          : <>{Math.round(p.area).toLocaleString("ko")} m²</>
+                        }
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-gray-500">설치 용량</span>
