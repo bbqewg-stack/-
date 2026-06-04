@@ -15,8 +15,9 @@ export async function GET(req: NextRequest) {
   const url = `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN&key=${key}&geometry=true&attribute=true&crs=EPSG:4326&format=json&size=1&geomFilter=POINT(${lng}%20${lat})`;
 
   try {
-    // 헤더 없이 시도
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { Referer: "https://nu-three-96.vercel.app" },
+    });
     const text = await res.text();
 
     if (text.trim().startsWith("<")) {
