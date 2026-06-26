@@ -64,6 +64,9 @@ export default function LayoutPage() {
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
+              onAutoAngle={(angle) =>
+                setModuleConfig(c => ({ ...c, angle }))
+              }
             />
           </div>
         </div>
