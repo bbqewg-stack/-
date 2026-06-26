@@ -20,8 +20,8 @@ interface PolygonData {
 
 interface KakaoMapProps {
   onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[]) => void;
-  moduleConfig: ModuleConfig;
-  onModuleCountsChange: (counts: number[]) => void;
+  moduleConfig?: ModuleConfig;
+  onModuleCountsChange?: (counts: number[]) => void;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -61,7 +61,7 @@ interface SearchResult {
   lon: string;
 }
 
-export default function LeafletMap({ onAreasChange, moduleConfig, onModuleCountsChange }: KakaoMapProps) {
+export default function LeafletMap({ onAreasChange, moduleConfig, onModuleCountsChange = () => {} }: KakaoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null);
@@ -103,7 +103,7 @@ export default function LeafletMap({ onAreasChange, moduleConfig, onModuleCounts
   // Module layout refs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moduleLayersRef = useRef<any[]>([]);
-  const moduleConfigRef = useRef<ModuleConfig>(moduleConfig);
+  const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,7 +120,7 @@ export default function LeafletMap({ onAreasChange, moduleConfig, onModuleCounts
     moduleLayersRef.current.forEach((l) => l.remove());
     moduleLayersRef.current = [];
 
-    if (!config.enabled || !map || !L) {
+    if (!config?.enabled || !map || !L) {
       onModuleCountsChangeRef.current([]);
       return;
     }
