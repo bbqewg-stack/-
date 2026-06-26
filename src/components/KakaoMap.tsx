@@ -2,6 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { ModuleConfig, calculateModuleLayout, isCoordInPolygon } from "@/lib/moduleLayout";
 
 interface Coord {
   lat: number;
@@ -19,6 +20,8 @@ interface PolygonData {
 
 interface KakaoMapProps {
   onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[]) => void;
+  moduleConfig: ModuleConfig;
+  onModuleCountsChange: (counts: number[]) => void;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -58,7 +61,7 @@ interface SearchResult {
   lon: string;
 }
 
-export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
+export default function LeafletMap({ onAreasChange, moduleConfig, onModuleCountsChange }: KakaoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null);
@@ -97,6 +100,72 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
   const drawingModeRef = useRef<'inclusion' | 'exclusion'>('inclusion');
   const [drawingMode, setDrawingMode] = useState<'inclusion' | 'exclusion'>('inclusion');
 
+  // Module layout refs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const moduleLayersRef = useRef<any[]>([]);
+  const moduleConfigRef = useRef<ModuleConfig>(moduleConfig);
+  const onModuleCountsChangeRef = useRef(onModuleCountsChange);
+  const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep refs in sync with props
+  useEffect(() => {
+    onModuleCountsChangeRef.current = onModuleCountsChange;
+  }, [onModuleCountsChange]);
+
+  const renderModules = useCallback(() => {
+    const config = moduleConfigRef.current;
+    const map = mapInstanceRef.current;
+    const L = leafletRef.current;
+
+    moduleLayersRef.current.forEach((l) => l.remove());
+    moduleLayersRef.current = [];
+
+    if (!config.enabled || !map || !L) {
+      onModuleCountsChangeRef.current([]);
+      return;
+    }
+
+    const allExclusionCoords = exclusionPolygonsRef.current.map((p) => p.coords);
+    const counts: number[] = [];
+
+    polygonsRef.current.forEach((polygonData) => {
+      const relevantExcls = allExclusionCoords.filter((exc) => {
+        const excCentroid: Coord = {
+          lat: exc.reduce((s, c) => s + c.lat, 0) / exc.length,
+          lng: exc.reduce((s, c) => s + c.lng, 0) / exc.length,
+        };
+        return isCoordInPolygon(excCentroid, polygonData.coords);
+      });
+
+      const modules = calculateModuleLayout(polygonData.coords, config, relevantExcls);
+      counts.push(modules.length);
+
+      modules.forEach((corners) => {
+        const latLngs = corners.map((c) => [c.lat, c.lng] as [number, number]);
+        const poly = L.polygon(latLngs, {
+          color: "#9b59b6",
+          weight: 0.8,
+          fillColor: "#d7bde2",
+          fillOpacity: 0.55,
+        }).addTo(map);
+        moduleLayersRef.current.push(poly);
+      });
+    });
+
+    onModuleCountsChangeRef.current(counts);
+  }, []);
+
+  const scheduleRenderModules = useCallback(() => {
+    if (renderDebounceRef.current) clearTimeout(renderDebounceRef.current);
+    renderDebounceRef.current = setTimeout(renderModules, 150);
+  }, [renderModules]);
+
+  // Sync config ref and trigger re-render whenever moduleConfig prop changes
+  useEffect(() => {
+    moduleConfigRef.current = moduleConfig;
+    scheduleRenderModules();
+  }, [moduleConfig, scheduleRenderModules]);
+
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
@@ -128,6 +197,7 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
 
     return () => {
       active = false;
+      if (renderDebounceRef.current) clearTimeout(renderDebounceRef.current);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -243,7 +313,8 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
     const inclusions = polygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'inclusion' as const }));
     const exclusions = exclusionPolygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'exclusion' as const }));
     onAreasChange([...inclusions, ...exclusions]);
-  }, [onAreasChange]);
+    renderModules();
+  }, [onAreasChange, renderModules]);
 
   const startDrawing = useCallback((mode: 'inclusion' | 'exclusion' = 'inclusion') => {
     const map = mapInstanceRef.current;
@@ -407,7 +478,6 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
       if (data?.geometry) {
         const geo = data.geometry;
 
-        // GeoJSON [lng, lat] → Leaflet [lat, lng] 변환
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const toLatLngs = (rings: any[][]) =>
           rings.map((ring) => ring.map(([x, y]: [number, number]) => [y, x]));
@@ -488,7 +558,8 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
     setIsDrawing(false);
     map.getContainer().style.cursor = "";
     onAreasChange([]);
-  }, [onAreasChange]);
+    renderModules();
+  }, [onAreasChange, renderModules]);
 
   const removeLastPolygon = useCallback(() => {
     if (polygonsRef.current.length === 0) return;
@@ -532,7 +603,6 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
           {isSearching ? "검색 중..." : "검색"}
         </button>
 
-        {/* 여러 결과일 때 다른 결과 선택 */}
         {searchResults.length > 1 && (
           <div className="absolute top-full left-2 right-2 bg-white border rounded shadow-lg z-[9999] max-h-48 overflow-y-auto">
             <div className="px-3 py-1.5 text-xs text-gray-400 bg-gray-50 border-b">다른 결과 선택</div>
@@ -548,7 +618,6 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
           </div>
         )}
 
-        {/* 최근 검색 드롭다운 */}
         {showRecent && searchResults.length === 0 && recentSearches.length > 0 && (
           <div className="absolute top-full left-2 right-2 bg-white border rounded shadow-lg z-[9999] max-h-48 overflow-y-auto">
             <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b">
@@ -575,6 +644,7 @@ export default function LeafletMap({ onAreasChange }: KakaoMapProps) {
           </div>
         )}
       </div>
+
       {/* 그리기 도구 */}
       <div className="flex gap-2 p-2 bg-white border-b items-center flex-shrink-0 flex-wrap">
         {!isDrawing ? (

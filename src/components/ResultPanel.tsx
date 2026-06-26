@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { calculateSolar } from "@/lib/solar";
+import { ModuleConfig, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
 
 interface Coord {
   lat: number;
@@ -10,6 +11,9 @@ interface Coord {
 
 interface ResultPanelProps {
   polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[];
+  moduleConfig: ModuleConfig;
+  onModuleConfigChange: (config: ModuleConfig) => void;
+  moduleCounts: number[];
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -34,7 +38,12 @@ function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
   return inside;
 }
 
-export default function ResultPanel({ polygons }: ResultPanelProps) {
+export default function ResultPanel({
+  polygons,
+  moduleConfig,
+  onModuleConfigChange,
+  moduleCounts,
+}: ResultPanelProps) {
   const [coverageRatio, setCoverageRatio] = useState(60);
   const [panelEfficiency, setPanelEfficiency] = useState(20);
   const [peakSunHours, setPeakSunHours] = useState(3.5);
@@ -46,7 +55,6 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
 
-  // 각 제외 폴리곤의 중심점이 속한 영역 찾기
   const exclusionsByInclusion: (typeof exclusions)[] = inclusions.map(inc =>
     exclusions.filter(exc => pointInPolygon(getCentroid(exc.coords), inc.coords))
   );
@@ -54,7 +62,6 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
     !inclusions.some(inc => pointInPolygon(getCentroid(exc.coords), inc.coords))
   );
 
-  // 각 영역의 순유효면적 (해당 영역에 속한 제외면적 차감)
   const inclusionNetAreas = inclusions.map((inc, i) => {
     const exclArea = exclusionsByInclusion[i].reduce((sum, e) => sum + e.area, 0);
     return Math.max(0, inc.area - exclArea);
@@ -65,7 +72,14 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
   const totalArea = Math.max(0, inclusionArea - exclusionArea);
   const firstCoords = inclusions.length > 0 ? inclusions[0].coords : [];
 
-  const result =
+  // Layout mode: use actual module counts from KakaoMap rendering
+  const totalModuleCount = moduleCounts.reduce((s, n) => s + n, 0);
+  const layoutEnabled = moduleConfig.enabled && totalModuleCount > 0;
+  const layoutCapacityKw = (totalModuleCount * moduleConfig.moduleWattage) / 1000;
+  const layoutAnnualKwh = layoutCapacityKw * peakSunHours * 365 * (systemEfficiency / 100);
+  const isAtLimit = totalModuleCount >= MODULE_LAYOUT_LIMIT;
+
+  const estimatedResult =
     totalArea > 0
       ? calculateSolar({
           areaSqm: totalArea,
@@ -76,9 +90,13 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
         })
       : null;
 
+  const showResult = layoutEnabled || estimatedResult !== null;
+
   const handleSave = async () => {
-    if (!result || !projectName.trim()) return;
+    if (!showResult || !projectName.trim()) return;
     setIsSaving(true);
+    const capacityKw = layoutEnabled ? layoutCapacityKw : estimatedResult!.capacityKw;
+    const annualKwh = layoutEnabled ? layoutAnnualKwh : estimatedResult!.annualGenerationKwh;
     try {
       const res = await fetch("/api/analyses", {
         method: "POST",
@@ -89,8 +107,8 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
           coordinates: firstCoords,
           coverage_ratio: coverageRatio / 100,
           panel_efficiency: panelEfficiency / 100,
-          capacity_kw: result.capacityKw,
-          annual_generation_kwh: result.annualGenerationKwh,
+          capacity_kw: capacityKw,
+          annual_generation_kwh: annualKwh,
           polygons_data: polygons,
         }),
       });
@@ -122,7 +140,6 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
             {(totalArea / 10000).toFixed(2)} ha
           </p>
         )}
-        {/* 영역별 면적 내역 */}
         {(inclusions.length > 1 || exclusions.length > 0) && (
           <div className="mt-2 space-y-1 border-t pt-2">
             {inclusions.map((p, i) => {
@@ -188,16 +205,127 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
         )}
       </div>
 
-      {/* 파라미터 */}
+      {/* 모듈 배치 설정 */}
+      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold text-gray-600">모듈 배치</p>
+          <button
+            onClick={() => onModuleConfigChange({ ...moduleConfig, enabled: !moduleConfig.enabled })}
+            disabled={inclusions.length === 0}
+            className={`text-xs px-2.5 py-1 rounded font-medium transition-colors disabled:opacity-40 ${
+              moduleConfig.enabled
+                ? "bg-purple-500 text-white hover:bg-purple-600"
+                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+            }`}
+          >
+            {moduleConfig.enabled ? "배치 해제" : "배치 미리보기"}
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          {/* 모듈 크기 */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500 w-14 flex-shrink-0">모듈 크기</span>
+            <input
+              type="number" value={moduleConfig.moduleWidth} min={500} max={3000} step={1}
+              onChange={(e) => onModuleConfigChange({ ...moduleConfig, moduleWidth: +e.target.value })}
+              className="w-[52px] border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
+            />
+            <span className="text-xs text-gray-400">×</span>
+            <input
+              type="number" value={moduleConfig.moduleHeight} min={500} max={3000} step={1}
+              onChange={(e) => onModuleConfigChange({ ...moduleConfig, moduleHeight: +e.target.value })}
+              className="w-[52px] border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
+            />
+            <span className="text-xs text-gray-400">mm</span>
+          </div>
+
+          {/* 모듈 출력 */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500 w-14 flex-shrink-0">모듈 출력</span>
+            <input
+              type="number" value={moduleConfig.moduleWattage} min={100} max={1000} step={5}
+              onChange={(e) => onModuleConfigChange({ ...moduleConfig, moduleWattage: +e.target.value })}
+              className="w-16 border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
+            />
+            <span className="text-xs text-gray-400">W</span>
+          </div>
+
+          {/* 행/열 간격 */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-500 flex-shrink-0">행간격</span>
+              <input
+                type="number" value={moduleConfig.rowSpacing} min={0} max={5000} step={10}
+                onChange={(e) => onModuleConfigChange({ ...moduleConfig, rowSpacing: +e.target.value })}
+                className="w-14 border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
+              />
+              <span className="text-xs text-gray-400">mm</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-500 flex-shrink-0">열간격</span>
+              <input
+                type="number" value={moduleConfig.colSpacing} min={0} max={1000} step={5}
+                onChange={(e) => onModuleConfigChange({ ...moduleConfig, colSpacing: +e.target.value })}
+                className="w-14 border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
+              />
+              <span className="text-xs text-gray-400">mm</span>
+            </div>
+          </div>
+
+          {/* 배치 각도 */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 w-14 flex-shrink-0">배치 각도</span>
+            <input
+              type="range" min={-90} max={90} step={1}
+              value={moduleConfig.angle}
+              onChange={(e) => onModuleConfigChange({ ...moduleConfig, angle: +e.target.value })}
+              className="flex-1 accent-purple-500"
+            />
+            <span className="text-xs text-gray-700 w-8 text-right font-mono">
+              {moduleConfig.angle}°
+            </span>
+          </div>
+        </div>
+
+        {/* 배치 결과 */}
+        {moduleConfig.enabled && (
+          <div className="mt-3 pt-2.5 border-t border-purple-200">
+            {totalModuleCount > 0 ? (
+              <>
+                <p className="text-xs font-semibold text-purple-700">
+                  {totalModuleCount.toLocaleString("ko")}개 모듈 배치됨
+                  {isAtLimit && (
+                    <span className="ml-1 text-orange-500">(최대 {MODULE_LAYOUT_LIMIT.toLocaleString()}개)</span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  패널 면적{" "}
+                  {(totalModuleCount * moduleConfig.moduleWidth * moduleConfig.moduleHeight / 1_000_000).toFixed(1)} m²
+                </p>
+              </>
+            ) : inclusions.length > 0 ? (
+              <p className="text-xs text-gray-400">배치 계산 중...</p>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {/* 계산 설정 */}
       <div className="bg-white border rounded-lg p-4">
-        <p className="text-xs font-semibold text-gray-600 mb-3">계산 설정</p>
+        <p className="text-xs font-semibold text-gray-600 mb-3">
+          계산 설정
+          {layoutEnabled && <span className="ml-1 text-purple-500">(배치 외 파라미터)</span>}
+        </p>
         <div className="space-y-3">
-          <Param
-            label={`배치율 ${coverageRatio}%`}
-            min={30} max={90} step={1}
-            value={coverageRatio}
-            onChange={setCoverageRatio}
-          />
+          {!layoutEnabled && (
+            <Param
+              label={`배치율 ${coverageRatio}%`}
+              min={30} max={90} step={1}
+              value={coverageRatio}
+              onChange={setCoverageRatio}
+            />
+          )}
           <Param
             label={`패널 효율 ${panelEfficiency}%`}
             min={15} max={25} step={1}
@@ -220,45 +348,76 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
       </div>
 
       {/* 결과 */}
-      {result && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+      {showResult && (
+        <div className={`rounded-lg p-4 border ${layoutEnabled ? "bg-purple-50 border-purple-200" : "bg-green-50 border-green-200"}`}>
           <p className="text-xs font-semibold text-gray-600 mb-3">
             {inclusions.length > 1 ? "전체 합산 결과" : "분석 결과"}
+            {layoutEnabled && <span className="ml-1 text-purple-500">(실제 배치 기준)</span>}
           </p>
-          <div className="space-y-2">
-            <Row label="예상 패널 수" value={`${result.panelCount.toLocaleString("ko")} 개`} />
-            <Row
-              label="설치 용량"
-              value={`${result.capacityKw >= 1000
-                ? (result.capacityKw / 1000).toFixed(2) + " MW"
-                : result.capacityKw.toFixed(1) + " kW"}`}
-              highlight
-            />
-            <Row
-              label="연간 예상 발전량"
-              value={`${(result.annualGenerationKwh / 1000).toFixed(1)} MWh`}
-            />
-            <Row
-              label="연간 CO₂ 절감 추정"
-              value={`${(result.annualGenerationKwh * 0.4581 / 1000).toFixed(1)} 톤`}
-            />
-          </div>
 
-          {/* 영역별 용량 내역 */}
+          {layoutEnabled ? (
+            <div className="space-y-2">
+              <Row label="설치 모듈 수" value={`${totalModuleCount.toLocaleString("ko")} 개`} />
+              <Row
+                label="설치 용량"
+                value={`${layoutCapacityKw >= 1000
+                  ? (layoutCapacityKw / 1000).toFixed(2) + " MW"
+                  : layoutCapacityKw.toFixed(1) + " kW"}`}
+                highlight
+                color="purple"
+              />
+              <Row
+                label="연간 예상 발전량"
+                value={`${(layoutAnnualKwh / 1000).toFixed(1)} MWh`}
+              />
+              <Row
+                label="연간 CO₂ 절감 추정"
+                value={`${(layoutAnnualKwh * 0.4581 / 1000).toFixed(1)} 톤`}
+              />
+            </div>
+          ) : (
+            estimatedResult && (
+              <div className="space-y-2">
+                <Row label="예상 패널 수" value={`${estimatedResult.panelCount.toLocaleString("ko")} 개`} />
+                <Row
+                  label="설치 용량"
+                  value={`${estimatedResult.capacityKw >= 1000
+                    ? (estimatedResult.capacityKw / 1000).toFixed(2) + " MW"
+                    : estimatedResult.capacityKw.toFixed(1) + " kW"}`}
+                  highlight
+                />
+                <Row
+                  label="연간 예상 발전량"
+                  value={`${(estimatedResult.annualGenerationKwh / 1000).toFixed(1)} MWh`}
+                />
+                <Row
+                  label="연간 CO₂ 절감 추정"
+                  value={`${(estimatedResult.annualGenerationKwh * 0.4581 / 1000).toFixed(1)} 톤`}
+                />
+              </div>
+            )
+          )}
+
+          {/* 영역별 내역 */}
           {inclusions.length > 1 && (
             <div className="mt-3 border-t pt-3 space-y-2">
               <p className="text-xs font-semibold text-gray-500 mb-1">영역별 예상 용량</p>
               {inclusions.map((p, i) => {
-                const netArea = inclusionNetAreas[i];
-                const r = calculateSolar({
-                  areaSqm: netArea,
-                  coverageRatio: coverageRatio / 100,
-                  panelEfficiency: panelEfficiency / 100,
-                  peakSunHours,
-                  systemEfficiency: systemEfficiency / 100,
-                });
                 const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+                const netArea = inclusionNetAreas[i];
                 const hasExcl = exclusionsByInclusion[i].length > 0;
+                const perCount = moduleCounts[i] ?? 0;
+                const perCapKw = layoutEnabled
+                  ? (perCount * moduleConfig.moduleWattage) / 1000
+                  : calculateSolar({
+                      areaSqm: netArea,
+                      coverageRatio: coverageRatio / 100,
+                      panelEfficiency: panelEfficiency / 100,
+                      peakSunHours,
+                      systemEfficiency: systemEfficiency / 100,
+                    }).capacityKw;
+                const perAnnual = perCapKw * peakSunHours * 365 * (systemEfficiency / 100);
+
                 return (
                   <div key={i} className="bg-white rounded p-2 border">
                     <div className="flex items-center gap-1.5 mb-1">
@@ -266,22 +425,27 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
                       <span className="text-xs font-medium text-gray-600">영역 {i + 1}</span>
                       <span className="text-xs text-gray-400 ml-auto">
                         {hasExcl
-                          ? <>{Math.round(netArea).toLocaleString("ko")} m² <span className="text-red-300 line-through">{Math.round(p.area).toLocaleString("ko")}</span></>
-                          : <>{Math.round(p.area).toLocaleString("ko")} m²</>
-                        }
+                          ? <>{Math.round(netArea).toLocaleString("ko")} m²</>
+                          : <>{Math.round(p.area).toLocaleString("ko")} m²</>}
                       </span>
                     </div>
+                    {layoutEnabled && (
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">모듈 수</span>
+                        <span className="text-xs font-semibold text-purple-600">{perCount.toLocaleString("ko")} 개</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-xs text-gray-500">설치 용량</span>
                       <span className="text-xs font-bold" style={{ color }}>
-                        {r.capacityKw >= 1000
-                          ? (r.capacityKw / 1000).toFixed(2) + " MW"
-                          : r.capacityKw.toFixed(1) + " kW"}
+                        {perCapKw >= 1000
+                          ? (perCapKw / 1000).toFixed(2) + " MW"
+                          : perCapKw.toFixed(1) + " kW"}
                       </span>
                     </div>
                     <div className="flex justify-between mt-0.5">
                       <span className="text-xs text-gray-500">연간 발전량</span>
-                      <span className="text-xs text-gray-700">{(r.annualGenerationKwh / 1000).toFixed(1)} MWh</span>
+                      <span className="text-xs text-gray-700">{(perAnnual / 1000).toFixed(1)} MWh</span>
                     </div>
                   </div>
                 );
@@ -292,7 +456,7 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
       )}
 
       {/* 저장 */}
-      {result && (
+      {showResult && (
         <div className="bg-white border rounded-lg p-4">
           <p className="text-xs font-semibold text-gray-600 mb-2">결과 저장</p>
           <input
@@ -346,13 +510,21 @@ function Param({
   );
 }
 
-function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function Row({
+  label, value, highlight, color,
+}: {
+  label: string; value: string; highlight?: boolean; color?: "purple" | "green";
+}) {
+  const highlightClass =
+    highlight
+      ? color === "purple"
+        ? "text-purple-600 text-base"
+        : "text-green-600 text-base"
+      : "text-gray-700";
   return (
     <div className="flex justify-between items-center">
       <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-semibold ${highlight ? "text-green-600 text-base" : "text-gray-700"}`}>
-        {value}
-      </span>
+      <span className={`text-sm font-semibold ${highlightClass}`}>{value}</span>
     </div>
   );
 }
