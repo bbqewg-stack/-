@@ -300,7 +300,7 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
 
     const el = iframe.contentDocument!.getElementById("drawing") as HTMLElement;
     const canvas = await html2canvas(el, {
-      scale: 1,
+      scale: 2,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -308,7 +308,7 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
       height: 1188,
       backgroundColor: "#ffffff",
     });
-    return canvas.toDataURL("image/jpeg", 0.93);
+    return canvas.toDataURL("image/jpeg", 0.97);
   } finally {
     document.body.removeChild(iframe);
   }

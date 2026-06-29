@@ -814,7 +814,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       await new Promise(r => setTimeout(r, 200));
 
-      const SCALE = 2;
+      const SCALE = 3;
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
         allowTaint: true,
