@@ -55,6 +55,12 @@ export default function LayoutPage() {
     prevInclusionCountRef.current = Math.max(0, prevInclusionCountRef.current - 1);
   }, []);
 
+  const handleLoadProject = useCallback(({ moduleConfig: mc, zoneLabels: zl }: { moduleConfig: ModuleConfig; zoneLabels: string[] }) => {
+    setModuleConfig(mc);
+    setZoneLabels(zl);
+    prevInclusionCountRef.current = zl.length;
+  }, []);
+
 
   return (
     <div className="h-screen flex flex-col">
@@ -116,6 +122,7 @@ export default function LayoutPage() {
             onZoneLabelChange={handleZoneLabelChange}
             onZoneAngleChange={handleZoneAngleChange}
             onZoneRemove={handleZoneRemove}
+            onLoadProject={handleLoadProject}
           />
         </div>
       </main>

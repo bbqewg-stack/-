@@ -117,36 +117,36 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
   // ── Capacity table ──
   const capRows = [
-    ["총 발전용량",  `<b style="font-size:15px;color:${ACCENT}">${formatKw(data.totalCapacityKw)}</b>`],
+    ["총 발전용량",  `<b style="font-size:20px;color:${ACCENT}">${formatKw(data.totalCapacityKw)}</b>`],
     ["모듈 규격",    moduleSpecText],
     ["모듈 총 수량", `${data.totalModules.toLocaleString("ko")} 장`],
     ["모듈 구성",    moduleConfigText],
     ["모듈 각도",    zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(" &nbsp;|&nbsp; ") || "-"],
     ["인버터 구성",  inverterText],
   ];
-  const capRowH = Math.floor((infoH * 0.65 - 36) / capRows.length);
-  const LW = 128;
+  const capRowH = Math.floor((infoH * 0.78 - 36) / capRows.length);
+  const LW = 142;
 
   const capRowsHtml = capRows.map(([lbl, val], idx) => `
     <div style="display:flex;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};">
       <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  display:flex;align-items:center;padding:0 10px;
-                  font-size:11.5px;font-weight:600;color:${MUTED};letter-spacing:0.3px;">
+                  display:flex;align-items:center;padding:0 8px;
+                  font-size:14px;font-weight:700;color:${MUTED};letter-spacing:0.2px;">
         ${lbl}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:12.5px;color:${TEXT};line-height:1.4;word-break:break-all;">
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:15px;color:${TEXT};line-height:1.45;word-break:break-all;">
         ${val}
       </div>
     </div>`).join("");
 
   // ── Location row ──
   const locHtml = `
-    <div style="display:flex;min-height:34px;border-bottom:1px solid ${BORDER};background:${STRIPE};">
+    <div style="display:flex;min-height:42px;border-bottom:1px solid ${BORDER};background:${STRIPE};">
       <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  display:flex;align-items:center;padding:0 10px;font-size:11.5px;font-weight:600;color:${MUTED};">
+                  display:flex;align-items:center;padding:0 8px;font-size:14px;font-weight:700;color:${MUTED};">
         설치 위치
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:12px;color:${TEXT};">
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:15px;color:${TEXT};">
         ${data.location || "&nbsp;"}
       </div>
     </div>`;
@@ -162,12 +162,12 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   const metaRowH = Math.floor((TITLE_BLOCK_H - 56) / metaItems.length);
   const metaHtml = metaItems.map(([k, v]) => `
     <div style="display:flex;height:${metaRowH}px;">
-      <div style="width:76px;flex-shrink:0;border-right:1px solid ${BORDER};
+      <div style="width:84px;flex-shrink:0;border-right:1px solid ${BORDER};
                   display:flex;align-items:center;padding:0 8px;
-                  font-size:10px;font-weight:700;color:${MUTED};letter-spacing:0.5px;background:${STRIPE};">
+                  font-size:12px;font-weight:700;color:${MUTED};letter-spacing:0.5px;background:${STRIPE};">
         ${k}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:10.5px;color:${TEXT};">
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;color:${TEXT};">
         ${v}
       </div>
     </div>`).join("");
@@ -240,7 +240,7 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
     <div style="flex-shrink:0;">
       <div style="background:${NAVY};color:#fff;padding:0 14px;height:32px;display:flex;align-items:center;gap:8px;">
         <div style="width:3px;height:14px;background:#7dd3fc;border-radius:2px;"></div>
-        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;">발전용량</span>
+        <span style="font-size:15px;font-weight:700;letter-spacing:1.5px;">발전용량</span>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -259,8 +259,8 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
       <!-- Title block header -->
       <div style="background:${NAVY};padding:0 14px;height:34px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:2px;font-family:Arial,sans-serif;">DRAWING INFO</div>
-        <div style="font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px;">태양광 자동 용량계산</div>
+        <div style="font-size:15px;font-weight:700;color:#fff;letter-spacing:2px;font-family:Arial,sans-serif;">DRAWING INFO</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);letter-spacing:1px;">태양광 자동 용량계산</div>
       </div>
       <!-- Divider with logo -->
       <div style="height:48px;display:flex;align-items:center;border-bottom:1px solid ${BORDER};background:#fff;">
@@ -269,8 +269,8 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
         </div>
         <div style="width:1px;height:32px;background:${BORDER};"></div>
         <div style="flex:2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
-          <div style="font-size:14px;font-weight:900;letter-spacing:4px;color:${NAVY};font-family:Arial,sans-serif;">MODULE ARRAY</div>
-          <div style="font-size:9px;color:${MUTED};letter-spacing:1px;">SOLAR PV INSTALLATION PLAN</div>
+          <div style="font-size:16px;font-weight:900;letter-spacing:4px;color:${NAVY};font-family:Arial,sans-serif;">MODULE ARRAY</div>
+          <div style="font-size:11px;color:${MUTED};letter-spacing:1px;">SOLAR PV INSTALLATION PLAN</div>
         </div>
       </div>
       <!-- Meta rows -->

@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
-import { ModuleConfig, calculateModuleLayout, isCoordInPolygon } from "@/lib/moduleLayout";
+import { ModuleConfig, ZoneAdjust, calculateModuleLayout, isCoordInPolygon } from "@/lib/moduleLayout";
 
 interface Coord {
   lat: number;
@@ -20,11 +20,21 @@ interface PolygonData {
   label: string;
 }
 
+export interface SavedPolygon {
+  type: 'inclusion' | 'exclusion';
+  coords: { lat: number; lng: number }[];
+  angle: number;
+  label: string;
+}
+
 export interface KakaoMapHandle {
   captureMapImage: () => Promise<string>;
   renameZone: (index: number, label: string) => void;
   setZoneAngle: (index: number, angle: number) => void;
   removeZone: (index: number) => void;
+  setZoneAdjust: (index: number, adj: ZoneAdjust) => void;
+  getSaveData: () => SavedPolygon[];
+  loadProject: (polygons: SavedPolygon[]) => void;
 }
 
 interface KakaoMapProps {
@@ -211,6 +221,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const notifyAreasRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderModulesRef = useRef<any>(null);
+  const zoneAdjustsRef = useRef<ZoneAdjust[]>([]);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
 
@@ -261,7 +272,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         return isCoordInPolygon(excCentroid, polygonData.coords);
       });
 
-      const modules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls);
+      const modules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls, zoneAdjustsRef.current[zoneIndex]);
       counts.push(modules.length);
 
       // 구역별 색상으로 모듈 렌더링, 동시에 모듈 NW 코너 추적
@@ -936,7 +947,84 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       poly.labelMarker.remove();
       polygonsRef.current = polygonsRef.current.filter((_, i) => i !== index);
       zoneCapacitiesRef.current = zoneCapacitiesRef.current.filter((_, i) => i !== index);
+      zoneAdjustsRef.current = zoneAdjustsRef.current.filter((_, i) => i !== index);
       setPolygonCount(polygonsRef.current.length);
+      notifyAreasRef.current?.();
+    },
+    setZoneAdjust: (index: number, adj: ZoneAdjust) => {
+      zoneAdjustsRef.current[index] = adj;
+      renderModulesRef.current?.();
+    },
+    getSaveData: (): SavedPolygon[] => {
+      const inclusions: SavedPolygon[] = polygonsRef.current.map(p => ({
+        type: 'inclusion' as const,
+        coords: p.coords,
+        angle: p.angle,
+        label: p.label,
+      }));
+      const exclusions: SavedPolygon[] = exclusionPolygonsRef.current.map(p => ({
+        type: 'exclusion' as const,
+        coords: p.coords,
+        angle: 0,
+        label: p.label,
+      }));
+      return [...inclusions, ...exclusions];
+    },
+    loadProject: (savedPolygons: SavedPolygon[]) => {
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (!map || !L) return;
+
+      // Clear existing polygons
+      polygonsRef.current.forEach(p => { p.leafletPolygon.remove(); p.labelMarker.remove(); });
+      polygonsRef.current = [];
+      exclusionPolygonsRef.current.forEach(p => { p.leafletPolygon.remove(); p.labelMarker.remove(); });
+      exclusionPolygonsRef.current = [];
+      zoneAdjustsRef.current = [];
+      zoneCapacitiesRef.current = [];
+      setPolygonCount(0);
+      setExclusionCount(0);
+
+      savedPolygons.forEach(saved => {
+        const latLngs = saved.coords.map(c => [c.lat, c.lng] as [number, number]);
+        const area = calculateArea(saved.coords);
+        const centroid = getCentroid(latLngs);
+
+        if (saved.type === 'exclusion') {
+          const exIdx = exclusionPolygonsRef.current.length + 1;
+          const polygon = L.polygon(latLngs, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
+          const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
+          const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
+          exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords: saved.coords, angle: 0, label: saved.label }];
+          setExclusionCount(exclusionPolygonsRef.current.length);
+        } else {
+          const colorIndex = polygonsRef.current.length;
+          const color = getColor(colorIndex);
+          const shortLabel = saved.label.replace("구역", "").trim();
+          const nwCorner: [number, number] = [
+            Math.max(...latLngs.map(v => v[0])),
+            Math.min(...latLngs.map(v => v[1])),
+          ];
+          const polygon = L.polygon(latLngs, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
+          const ts = "-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8)";
+          const labelIcon = L.divIcon({
+            html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:${ts};">${shortLabel}</div>`,
+            className: "", iconAnchor: [0, 0],
+          });
+          const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
+          polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords: saved.coords, angle: saved.angle, label: saved.label }];
+          setPolygonCount(polygonsRef.current.length);
+        }
+      });
+
+      // Fit map to loaded polygons
+      if (savedPolygons.length > 0) {
+        const allCoords = savedPolygons.flatMap(p => p.coords);
+        const lats = allCoords.map(c => c.lat);
+        const lngs = allCoords.map(c => c.lng);
+        map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], { padding: [40, 40] });
+      }
+
       notifyAreasRef.current?.();
     },
   }), []);

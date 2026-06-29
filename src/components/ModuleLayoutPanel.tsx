@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, RefObject } from "react";
-import { ModuleConfig, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
-import { KakaoMapHandle } from "@/components/KakaoMap";
+import { useState, RefObject, useCallback } from "react";
+import { ModuleConfig, ZoneAdjust, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
+import { KakaoMapHandle, SavedPolygon } from "@/components/KakaoMap";
 
 interface Coord {
   lat: number;
@@ -19,6 +19,22 @@ interface ModuleLayoutPanelProps {
   onZoneLabelChange?: (index: number, label: string) => void;
   onZoneAngleChange?: (index: number, angle: number) => void;
   onZoneRemove?: (index: number) => void;
+  onLoadProject?: (data: { moduleConfig: ModuleConfig; zoneLabels: string[] }) => void;
+}
+
+interface SavedProject {
+  id: string;
+  name: string;
+  savedAt: string;
+  moduleConfig: ModuleConfig;
+  zoneLabels: string[];
+  zoneAdjusts: ZoneAdjust[];
+  polygons: SavedPolygon[];
+  projectName: string;
+  location: string;
+  modulesPerString: number;
+  peakSunHours: number;
+  systemEfficiency: number;
 }
 
 function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
@@ -44,12 +60,27 @@ function getCentroid(coords: Coord[]): Coord {
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
 
 const MODULE_PRESETS = [
+  { label: "LONGI 660W",     wattage: 660, width: 1134, height: 2382 },
   { label: "JINKO 660W",     wattage: 660, width: 1134, height: 2382 },
   { label: "TRINA 730W",     wattage: 730, width: 1303, height: 2384 },
-  { label: "LONGI 660W",     wattage: 660, width: 1134, height: 2382 },
   { label: "한화큐셀 640W",   wattage: 640, width: 1134, height: 2382 },
   { label: "한화큐셀 730W",   wattage: 730, width: 1303, height: 2384 },
 ];
+
+const LS_KEY = "solar_saved_projects";
+
+function loadSavedProjects(): SavedProject[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveSavedProjects(projects: SavedProject[]) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(projects)); } catch {}
+}
+
+const EMPTY_ADJUST: ZoneAdjust = { top: 0, bottom: 0, left: 0, right: 0 };
 
 export default function ModuleLayoutPanel({
   polygons,
@@ -61,14 +92,22 @@ export default function ModuleLayoutPanel({
   onZoneLabelChange,
   onZoneAngleChange,
   onZoneRemove,
+  onLoadProject,
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
-  const [modulesPerString, setModulesPerString] = useState(0);
+  const [modulesPerString, setModulesPerString] = useState(15);
   const [printState, setPrintState] = useState<'idle' | 'capturing' | 'preview'>('idle');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [projectName, setProjectName] = useState("태양광 발전소");
   const [location, setLocation] = useState("");
+  const [zoneAdjusts, setZoneAdjusts] = useState<ZoneAdjust[]>([]);
+
+  // Save / Load modal state
+  const [saveModal, setSaveModal] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [loadModal, setLoadModal] = useState(false);
+  const [savedProjects, setSavedProjects] = useState<SavedProject[]>([]);
 
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
@@ -84,7 +123,6 @@ export default function ModuleLayoutPanel({
 
   const totalArea = Math.max(0, inclusions.reduce((s, p) => s + p.area, 0) - exclusions.reduce((s, p) => s + p.area, 0));
 
-  // 결선 조정 계산
   const rawCounts = inclusions.map((_, i) => moduleCounts[i] ?? 0);
   const totalRawModules = rawCounts.reduce((s, n) => s + n, 0);
   const adjustedCounts = rawCounts.map(raw =>
@@ -99,6 +137,17 @@ export default function ModuleLayoutPanel({
 
   const set = (patch: Partial<ModuleConfig>) =>
     onModuleConfigChange({ ...moduleConfig, ...patch });
+
+  const getZoneAdjust = (i: number): ZoneAdjust => zoneAdjusts[i] ?? EMPTY_ADJUST;
+
+  const setZoneAdjust = useCallback((i: number, adj: ZoneAdjust) => {
+    setZoneAdjusts(prev => {
+      const next = [...prev];
+      next[i] = adj;
+      return next;
+    });
+    mapRef?.current?.setZoneAdjust(i, adj);
+  }, [mapRef]);
 
   const buildPdfData = async () => {
     const mapImageDataUrl = await mapRef!.current!.captureMapImage();
@@ -158,8 +207,145 @@ export default function ModuleLayoutPanel({
     setPreviewDataUrl(null);
   };
 
+  // ── Save ──
+  const handleOpenSave = () => {
+    setSaveName(projectName);
+    setSaveModal(true);
+  };
+
+  const handleSave = () => {
+    if (!saveName.trim()) return;
+    const polygonData = mapRef?.current?.getSaveData() ?? [];
+    const project: SavedProject = {
+      id: Date.now().toString(),
+      name: saveName.trim(),
+      savedAt: new Date().toISOString(),
+      moduleConfig,
+      zoneLabels: zoneLabels ?? [],
+      zoneAdjusts,
+      polygons: polygonData,
+      projectName,
+      location,
+      modulesPerString,
+      peakSunHours,
+      systemEfficiency,
+    };
+    const existing = loadSavedProjects();
+    saveSavedProjects([project, ...existing]);
+    setSaveModal(false);
+    setSaveName("");
+  };
+
+  // ── Load ──
+  const handleOpenLoad = () => {
+    setSavedProjects(loadSavedProjects());
+    setLoadModal(true);
+  };
+
+  const handleLoad = (project: SavedProject) => {
+    // Restore panel state
+    setPeakSunHours(project.peakSunHours);
+    setSystemEfficiency(project.systemEfficiency);
+    setModulesPerString(project.modulesPerString);
+    setProjectName(project.projectName);
+    setLocation(project.location);
+    setZoneAdjusts(project.zoneAdjusts ?? []);
+
+    // Restore parent state (moduleConfig + zoneLabels)
+    onLoadProject?.({ moduleConfig: project.moduleConfig, zoneLabels: project.zoneLabels });
+
+    // Restore polygons on map
+    mapRef?.current?.loadProject(project.polygons);
+
+    // Re-apply zone adjustments
+    (project.zoneAdjusts ?? []).forEach((adj, i) => {
+      mapRef?.current?.setZoneAdjust(i, adj);
+    });
+
+    setLoadModal(false);
+  };
+
+  const handleDeleteProject = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = loadSavedProjects().filter(p => p.id !== id);
+    saveSavedProjects(updated);
+    setSavedProjects(updated);
+  };
+
   return (
     <div className="flex flex-col gap-3 p-4 h-full overflow-y-auto">
+
+      {/* 저장/불러오기 버튼 */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleOpenSave}
+          className="flex-1 py-1.5 bg-emerald-600 text-white rounded text-xs font-semibold hover:bg-emerald-700 transition-colors"
+        >
+          💾 저장
+        </button>
+        <button
+          onClick={handleOpenLoad}
+          className="flex-1 py-1.5 bg-amber-500 text-white rounded text-xs font-semibold hover:bg-amber-600 transition-colors"
+        >
+          📂 불러오기
+        </button>
+      </div>
+
+      {/* 저장 모달 */}
+      {saveModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4" onClick={() => setSaveModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-80 p-5" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-gray-800 mb-3">프로젝트 저장</p>
+            <input
+              type="text"
+              value={saveName}
+              onChange={e => setSaveName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              placeholder="저장 이름 입력"
+              className="w-full border rounded px-3 py-2 text-sm outline-none focus:border-emerald-400 mb-3"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setSaveModal(false)} className="flex-1 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300">취소</button>
+              <button onClick={handleSave} disabled={!saveName.trim()} className="flex-1 py-2 bg-emerald-600 text-white rounded text-sm hover:bg-emerald-700 disabled:opacity-40">저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 불러오기 모달 */}
+      {loadModal && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4" onClick={() => setLoadModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-96 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <span className="font-bold text-gray-800">저장된 프로젝트</span>
+              <button onClick={() => setLoadModal(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {savedProjects.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">저장된 프로젝트가 없습니다</p>
+              ) : savedProjects.map(proj => (
+                <div
+                  key={proj.id}
+                  onClick={() => handleLoad(proj)}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-blue-50 cursor-pointer group"
+                >
+                  <div>
+                    <p className="font-semibold text-sm text-gray-800">{proj.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(proj.savedAt).toLocaleString("ko")} · {proj.polygons.filter(p => p.type === 'inclusion').length}구역
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteProject(proj.id, e)}
+                    className="text-gray-300 hover:text-red-500 text-sm px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PDF 정보 입력 */}
       <div className="bg-white border rounded-lg p-4">
@@ -208,33 +394,17 @@ export default function ModuleLayoutPanel({
             style={{ maxWidth: "95vw", maxHeight: "95vh" }}
             onClick={e => e.stopPropagation()}
           >
-            {/* 모달 헤더 */}
             <div className="flex items-center justify-between px-5 py-3 border-b bg-gray-50">
               <span className="font-bold text-gray-800 text-base">도면 미리보기</span>
               <div className="flex gap-2">
-                <button
-                  onClick={handleCancelPreview}
-                  className="px-4 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300 font-medium"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={handleConfirmPrint}
-                  className="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 font-medium"
-                >
-                  PDF 저장
-                </button>
+                <button onClick={handleCancelPreview} className="px-4 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300 font-medium">취소</button>
+                <button onClick={handleConfirmPrint} className="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 font-medium">PDF 저장</button>
               </div>
             </div>
-            {/* 미리보기 이미지 */}
             <div className="flex-1 bg-gray-300 overflow-hidden flex items-center justify-center p-2" style={{ minHeight: 0 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewDataUrl}
-                alt="도면 미리보기"
-                className="shadow-xl"
-                style={{ maxWidth: "100%", maxHeight: "calc(95vh - 70px)", objectFit: "contain", display: "block" }}
-              />
+              <img src={previewDataUrl} alt="도면 미리보기" className="shadow-xl"
+                style={{ maxWidth: "100%", maxHeight: "calc(95vh - 70px)", objectFit: "contain", display: "block" }} />
             </div>
           </div>
         </div>
@@ -244,7 +414,6 @@ export default function ModuleLayoutPanel({
       <div className="bg-white border rounded-lg p-4">
         <p className="text-xs font-semibold text-gray-600 mb-3">모듈 규격</p>
         <div className="space-y-2.5">
-          {/* 메이커 프리셋 */}
           <LabelRow label="메이커">
             <select
               value={MODULE_PRESETS.find(p =>
@@ -266,18 +435,15 @@ export default function ModuleLayoutPanel({
           </LabelRow>
           <LabelRow label="크기 (W×H)">
             <div className="flex items-center gap-1">
-              <NumInput value={moduleConfig.moduleWidth} min={500} max={3000}
-                onChange={v => set({ moduleWidth: v })} />
+              <NumInput value={moduleConfig.moduleWidth} min={500} max={3000} onChange={v => set({ moduleWidth: v })} />
               <span className="text-xs text-gray-400">×</span>
-              <NumInput value={moduleConfig.moduleHeight} min={500} max={3000}
-                onChange={v => set({ moduleHeight: v })} />
+              <NumInput value={moduleConfig.moduleHeight} min={500} max={3000} onChange={v => set({ moduleHeight: v })} />
               <span className="text-xs text-gray-400">mm</span>
             </div>
           </LabelRow>
           <LabelRow label="1장 출력">
             <div className="flex items-center gap-1">
-              <NumInput value={moduleConfig.moduleWattage} min={100} max={1000} step={5}
-                onChange={v => set({ moduleWattage: v })} />
+              <NumInput value={moduleConfig.moduleWattage} min={100} max={1000} step={5} onChange={v => set({ moduleWattage: v })} />
               <span className="text-xs text-gray-400">W</span>
             </div>
           </LabelRow>
@@ -290,42 +456,31 @@ export default function ModuleLayoutPanel({
         <div className="space-y-2.5">
           <LabelRow label="행 간격">
             <div className="flex items-center gap-1">
-              <NumInput value={moduleConfig.rowSpacing} min={0} max={5000} step={10}
-                onChange={v => set({ rowSpacing: v })} />
+              <NumInput value={moduleConfig.rowSpacing} min={0} max={5000} step={10} onChange={v => set({ rowSpacing: v })} />
               <span className="text-xs text-gray-400">mm</span>
             </div>
           </LabelRow>
           <LabelRow label="열 간격">
             <div className="flex items-center gap-1">
-              <NumInput value={moduleConfig.colSpacing} min={0} max={1000} step={5}
-                onChange={v => set({ colSpacing: v })} />
+              <NumInput value={moduleConfig.colSpacing} min={0} max={1000} step={5} onChange={v => set({ colSpacing: v })} />
               <span className="text-xs text-gray-400">mm</span>
             </div>
           </LabelRow>
           <LabelRow label="세로 최대 장수">
             <div className="flex items-center gap-1">
-              <NumInput value={moduleConfig.maxModulesPerColumn} min={1} max={50} step={1}
-                onChange={v => set({ maxModulesPerColumn: v })} />
+              <NumInput value={moduleConfig.maxModulesPerColumn} min={1} max={50} step={1} onChange={v => set({ maxModulesPerColumn: v })} />
               <span className="text-xs text-gray-400">장</span>
             </div>
           </LabelRow>
         </div>
       </div>
 
-      {/* 발전량 계산 파라미터 */}
+      {/* 발전량 파라미터 */}
       <div className="bg-white border rounded-lg p-4">
         <p className="text-xs font-semibold text-gray-600 mb-3">발전량 파라미터</p>
         <div className="space-y-3">
-          <SliderParam
-            label={`일평균 일조시간 ${peakSunHours}h`}
-            min={2.5} max={5} step={0.1}
-            value={peakSunHours} onChange={setPeakSunHours}
-          />
-          <SliderParam
-            label={`시스템 효율 ${systemEfficiency}%`}
-            min={70} max={95} step={1}
-            value={systemEfficiency} onChange={setSystemEfficiency}
-          />
+          <SliderParam label={`일평균 일조시간 ${peakSunHours}h`} min={2.5} max={5} step={0.1} value={peakSunHours} onChange={setPeakSunHours} />
+          <SliderParam label={`시스템 효율 ${systemEfficiency}%`} min={70} max={95} step={1} value={systemEfficiency} onChange={setSystemEfficiency} />
         </div>
       </div>
 
@@ -334,8 +489,7 @@ export default function ModuleLayoutPanel({
         <p className="text-xs font-semibold text-gray-600 mb-3">전기 결선 설정</p>
         <LabelRow label="스트링 결선 수량">
           <div className="flex items-center gap-1">
-            <NumInput value={modulesPerString} min={0} max={100} step={1}
-              onChange={setModulesPerString} />
+            <NumInput value={modulesPerString} min={0} max={100} step={1} onChange={setModulesPerString} />
             <span className="text-xs text-gray-400">개/스트링</span>
           </div>
         </LabelRow>
@@ -348,11 +502,8 @@ export default function ModuleLayoutPanel({
           <p className="text-xs text-gray-500 mb-1">
             선택 영역{exclusions.length > 0 && ` (제외 ${exclusions.length}개 반영)`}
           </p>
-          <p className="text-xl font-bold text-blue-600">
-            {Math.round(totalArea).toLocaleString("ko")} m²
-          </p>
+          <p className="text-xl font-bold text-blue-600">{Math.round(totalArea).toLocaleString("ko")} m²</p>
           <p className="text-xs text-gray-400 mt-0.5">{(totalArea / 10000).toFixed(3)} ha</p>
-
           <div className="mt-2 pt-2 border-t space-y-1.5">
             {inclusions.map((p, i) => {
               const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
@@ -361,11 +512,8 @@ export default function ModuleLayoutPanel({
                 <div key={i} className="flex items-center gap-1.5">
                   <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full flex-shrink-0" />
                   {onZoneLabelChange ? (
-                    <select
-                      value={label}
-                      onChange={e => onZoneLabelChange(i, e.target.value)}
-                      className="text-xs border rounded px-1 py-0.5 flex-1 min-w-0 outline-none focus:border-blue-400 bg-white"
-                    >
+                    <select value={label} onChange={e => onZoneLabelChange(i, e.target.value)}
+                      className="text-xs border rounded px-1 py-0.5 flex-1 min-w-0 outline-none focus:border-blue-400 bg-white">
                       {['A','B','C','D','E','F','G'].map(l => (
                         <option key={l} value={`${l}구역`}>{l}구역</option>
                       ))}
@@ -374,16 +522,10 @@ export default function ModuleLayoutPanel({
                     <span className="text-xs text-gray-600 flex-1">{label}</span>
                   )}
                   {inclusions.length > 1 && (
-                    <span className="text-xs text-gray-500 flex-shrink-0">
-                      {Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²
-                    </span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²</span>
                   )}
                   {onZoneRemove && (
-                    <button
-                      onClick={() => onZoneRemove(i)}
-                      className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5"
-                      title="구역 삭제"
-                    >✕</button>
+                    <button onClick={() => onZoneRemove(i)} className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5" title="구역 삭제">✕</button>
                   )}
                 </div>
               );
@@ -398,28 +540,17 @@ export default function ModuleLayoutPanel({
           <p className="text-xs font-semibold text-gray-600 mb-3">배치 결과</p>
           {totalRawModules > 0 ? (
             <div className="space-y-2">
-              <ResultRow label="배치 모듈 수"
-                value={`${totalRawModules.toLocaleString("ko")} 개`
-                  + (isAtLimit ? " ⚠️" : "")} />
+              <ResultRow label="배치 모듈 수" value={`${totalRawModules.toLocaleString("ko")} 개` + (isAtLimit ? " ⚠️" : "")} />
               {modulesPerString > 1 && (
                 <>
-                  <ResultRow label="결선 수량"
-                    value={`${modulesPerString} 개/스트링`} />
-                  <ResultRow label="확정 모듈 수"
-                    value={`${totalModules.toLocaleString("ko")} 개 (${totalStrings}스트링)`}
-                    highlight />
+                  <ResultRow label="결선 수량" value={`${modulesPerString} 개/스트링`} />
+                  <ResultRow label="확정 모듈 수" value={`${totalModules.toLocaleString("ko")} 개 (${totalStrings}스트링)`} highlight />
                 </>
               )}
-              <ResultRow label="패널 면적"
-                value={`${(totalModules * moduleConfig.moduleWidth * moduleConfig.moduleHeight / 1_000_000).toFixed(1)} m²`} />
-              <ResultRow label="설치 용량"
-                value={capacityKw >= 1000
-                  ? (capacityKw / 1000).toFixed(2) + " MW"
-                  : capacityKw.toFixed(2) + " kW"}
-                highlight />
+              <ResultRow label="패널 면적" value={`${(totalModules * moduleConfig.moduleWidth * moduleConfig.moduleHeight / 1_000_000).toFixed(1)} m²`} />
+              <ResultRow label="설치 용량" value={capacityKw >= 1000 ? (capacityKw / 1000).toFixed(2) + " MW" : capacityKw.toFixed(2) + " kW"} highlight />
               <ResultRow label="연간 예상 발전량" value={`${annualMwh.toFixed(1)} MWh`} />
-              <ResultRow label="연간 CO₂ 절감"
-                value={`${(annualMwh * 1000 * 0.4581 / 1000).toFixed(1)} 톤`} />
+              <ResultRow label="연간 CO₂ 절감" value={`${(annualMwh * 1000 * 0.4581 / 1000).toFixed(1)} 톤`} />
             </div>
           ) : inclusions.length > 0 ? (
             <p className="text-xs text-gray-400">배치 계산 중...</p>
@@ -427,59 +558,30 @@ export default function ModuleLayoutPanel({
             <p className="text-xs text-gray-400">영역을 그리면 자동 배치됩니다</p>
           )}
 
-          {/* 영역별 내역 */}
-          {inclusions.length > 1 && totalRawModules > 0 && (
+          {/* 구역별 내역 + 줄 조정 */}
+          {inclusions.length > 0 && totalRawModules > 0 && (
             <div className="mt-3 pt-3 border-t space-y-2">
-              <p className="text-xs font-semibold text-gray-500">영역별 내역</p>
-
-              {/* 구역별 합계 요약 - 같은 이름끼리 합산 */}
-              <div className="bg-white rounded p-2 border space-y-1">
-                {(() => {
-                  const grouped = new Map<string, { kw: number; color: string }>();
-                  inclusions.forEach((_, i) => {
-                    const cnt = adjustedCounts[i] ?? 0;
-                    const kw = (cnt * moduleConfig.moduleWattage) / 1000;
-                    const lbl = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
-                    const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
-                    if (!grouped.has(lbl)) {
-                      grouped.set(lbl, { kw, color });
-                    } else {
-                      grouped.get(lbl)!.kw += kw;
-                    }
-                  });
-                  return Array.from(grouped.entries()).map(([lbl, { kw, color }]) => (
-                    <div key={lbl} className="flex justify-between items-center">
-                      <span className="text-xs font-bold" style={{ color }}>{lbl} 합계</span>
-                      <span className="text-xs font-bold" style={{ color }}>
-                        {kw >= 1000 ? (kw / 1000).toFixed(2) + " MW" : kw.toFixed(2) + " kW"}
-                      </span>
-                    </div>
-                  ));
-                })()}
-              </div>
-
+              <p className="text-xs font-semibold text-gray-500">영역별 내역 / 줄 조정</p>
               {inclusions.map((_, i) => {
                 const rawCnt = rawCounts[i] ?? 0;
                 const cnt = adjustedCounts[i] ?? 0;
                 const kw = (cnt * moduleConfig.moduleWattage) / 1000;
                 const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
                 const polyAngle = inclusions[i]?.angle;
+                const adj = getZoneAdjust(i);
                 return (
                   <div key={i} className="bg-white rounded p-2 border">
-                    <div className="flex items-center gap-1.5 mb-1">
+                    {/* 구역 헤더 */}
+                    <div className="flex items-center gap-1.5 mb-1.5">
                       <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full" />
                       <span className="text-xs font-medium text-gray-600">
                         {zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역"}
                       </span>
                       {polyAngle !== undefined && onZoneAngleChange ? (
                         <div className="flex items-center gap-0.5 ml-1">
-                          <input
-                            type="number"
-                            value={polyAngle.toFixed(1)}
-                            min={0} max={360} step={0.5}
+                          <input type="number" value={polyAngle.toFixed(1)} min={0} max={360} step={0.5}
                             onChange={e => onZoneAngleChange(i, parseFloat(e.target.value) || 0)}
-                            className="text-xs border rounded px-1 py-0 w-16 text-center outline-none focus:border-blue-400"
-                          />
+                            className="text-xs border rounded px-1 py-0 w-16 text-center outline-none focus:border-blue-400" />
                           <span className="text-xs text-gray-400">°</span>
                         </div>
                       ) : polyAngle !== undefined ? (
@@ -490,16 +592,20 @@ export default function ModuleLayoutPanel({
                           <span className="text-xs text-gray-400 line-through mr-1">{rawCnt.toLocaleString("ko")}</span>
                         )}
                         <span className="text-xs text-purple-600 font-semibold">{cnt.toLocaleString("ko")} 개</span>
-                        {modulesPerString > 1 && cnt > 0 && (
-                          <span className="text-xs text-gray-400 ml-1">({cnt / modulesPerString}스트링)</span>
-                        )}
                       </div>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between mb-2">
                       <span className="text-xs text-gray-500">설치 용량</span>
                       <span className="text-xs font-bold" style={{ color }}>
                         {kw >= 1000 ? (kw / 1000).toFixed(2) + " MW" : kw.toFixed(2) + " kW"}
                       </span>
+                    </div>
+                    {/* 줄 조정 컨트롤 */}
+                    <div className="grid grid-cols-2 gap-1 pt-1.5 border-t">
+                      <AdjustControl label="상(북)" value={adj.top} onChange={v => setZoneAdjust(i, { ...adj, top: v })} />
+                      <AdjustControl label="하(남)" value={adj.bottom} onChange={v => setZoneAdjust(i, { ...adj, bottom: v })} />
+                      <AdjustControl label="좌(서)" value={adj.left} onChange={v => setZoneAdjust(i, { ...adj, left: v })} />
+                      <AdjustControl label="우(동)" value={adj.right} onChange={v => setZoneAdjust(i, { ...adj, right: v })} />
                     </div>
                   </div>
                 );
@@ -517,10 +623,7 @@ export default function ModuleLayoutPanel({
         inclusions.length > 0 && (
           <div className="bg-gray-50 border rounded-lg p-4 text-center">
             <p className="text-xs text-gray-400">모듈 배치가 꺼져 있습니다</p>
-            <button
-              onClick={() => set({ enabled: true })}
-              className="mt-2 text-xs px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600"
-            >
+            <button onClick={() => set({ enabled: true })} className="mt-2 text-xs px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
               배치 켜기
             </button>
           </div>
@@ -537,18 +640,22 @@ export default function ModuleLayoutPanel({
   );
 }
 
-function NumInput({
-  value, min, max, step = 1, onChange,
-}: {
-  value: number; min: number; max: number; step?: number;
-  onChange: (v: number) => void;
-}) {
+function AdjustControl({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
-    <input
-      type="number" value={value} min={min} max={max} step={step}
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-gray-400 w-10 flex-shrink-0">{label}</span>
+      <button onClick={() => onChange(Math.max(0, value - 1))} className="w-5 h-5 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-xs font-bold leading-none">-</button>
+      <span className="text-xs font-semibold w-4 text-center">{value}</span>
+      <button onClick={() => onChange(Math.min(10, value + 1))} className="w-5 h-5 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-xs font-bold leading-none">+</button>
+    </div>
+  );
+}
+
+function NumInput({ value, min, max, step = 1, onChange }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void }) {
+  return (
+    <input type="number" value={value} min={min} max={max} step={step}
       onChange={(e) => onChange(+e.target.value)}
-      className="w-16 border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400"
-    />
+      className="w-16 border rounded px-1 py-0.5 text-xs text-center outline-none focus:border-purple-400" />
   );
 }
 
@@ -561,20 +668,13 @@ function LabelRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function SliderParam({
-  label, min, max, step, value, onChange,
-}: {
-  label: string; min: number; max: number; step: number;
-  value: number; onChange: (v: number) => void;
-}) {
+function SliderParam({ label, min, max, step, value, onChange }: { label: string; min: number; max: number; step: number; value: number; onChange: (v: number) => void }) {
   return (
     <div>
       <span className="text-xs text-gray-500">{label}</span>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
+      <input type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-blue-500 mt-0.5"
-      />
+        className="w-full accent-blue-500 mt-0.5" />
     </div>
   );
 }
@@ -583,9 +683,7 @@ function ResultRow({ label, value, highlight }: { label: string; value: string; 
   return (
     <div className="flex justify-between items-center">
       <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-semibold ${highlight ? "text-purple-600 text-base" : "text-gray-700"}`}>
-        {value}
-      </span>
+      <span className={`text-sm font-semibold ${highlight ? "text-purple-600 text-base" : "text-gray-700"}`}>{value}</span>
     </div>
   );
 }

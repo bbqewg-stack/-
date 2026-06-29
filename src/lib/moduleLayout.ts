@@ -17,13 +17,20 @@ export interface Coord {
 export const DEFAULT_MODULE_CONFIG: ModuleConfig = {
   enabled: false,
   moduleWidth: 1134,
-  moduleHeight: 2094,
-  moduleWattage: 550,
+  moduleHeight: 2382,
+  moduleWattage: 660,
   rowSpacing: 10,
   colSpacing: 10,
   angle: 180,
   maxModulesPerColumn: 5,
 };
+
+export interface ZoneAdjust {
+  top: number;    // extra rows at north edge
+  bottom: number; // extra rows at south edge
+  left: number;   // extra cols at west edge
+  right: number;  // extra cols at east edge
+}
 
 export function isCoordInPolygon(point: Coord, polygon: Coord[]): boolean {
   const { lat: y, lng: x } = point;
@@ -80,7 +87,8 @@ export const MODULE_LAYOUT_LIMIT = 10000;
 export function calculateModuleLayout(
   polygonCoords: Coord[],
   config: ModuleConfig,
-  exclusionCoordsList: Coord[][] = []
+  exclusionCoordsList: Coord[][] = [],
+  adjust?: ZoneAdjust
 ): Coord[][] {
   if (polygonCoords.length < 3) return [];
 
@@ -110,18 +118,30 @@ export function calculateModuleLayout(
 
   const result: Coord[][] = [];
 
-  // Anchor grid to NW corner (minX, minY) so the whole block moves together when angle changes
-  const numCols = Math.floor((maxX - minX + 1e-6) / colStep);
-  const numRows = Math.floor((maxY - minY + 1e-6) / rowStep);
-  const startX = minX;
-  const startY = minY;
+  // Base grid dimensions from polygon bounds
+  const baseNumCols = Math.floor((maxX - minX + 1e-6) / colStep);
+  const baseNumRows = Math.floor((maxY - minY + 1e-6) / rowStep);
+
+  // 4-direction adjustment: extend grid beyond polygon boundary
+  const topAdd    = Math.max(0, adjust?.top    ?? 0);
+  const bottomAdd = Math.max(0, adjust?.bottom ?? 0);
+  const leftAdd   = Math.max(0, adjust?.left   ?? 0);
+  const rightAdd  = Math.max(0, adjust?.right  ?? 0);
+
+  const numCols = baseNumCols + leftAdd + rightAdd;
+  const numRows = baseNumRows + topAdd + bottomAdd;
+  const startX = minX - leftAdd * colStep;
+  const startY = minY - bottomAdd * rowStep;
+
+  // Coordinate range covered by the base polygon-fitted grid
+  const baseMinX = minX, baseMaxX = minX + baseNumCols * colStep;
+  const baseMinY = minY, baseMaxY = minY + baseNumRows * rowStep;
 
   const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
 
   for (let col = 0; col < numCols; col++) {
     const x = startX + col * colStep;
     let placedInCol = 0;
-    // Iterate north→south (numRows-1 = maxY side = north) so modules fill from north first
     for (let row = numRows - 1; row >= 0; row--) {
       if (placedInCol >= maxPerCol) break;
       const y = startY + row * rowStep;
@@ -130,8 +150,13 @@ export function calculateModuleLayout(
       ];
       const center = { x: x + mW / 2, y: y + mH / 2 };
 
-      if (!corners.every((c) => inPoly2D(c, poly))) continue;
-      if (!inPoly2D(center, poly)) continue;
+      // Extended cells (outside base polygon area) skip polygon boundary check
+      const isExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6 ||
+                         y < baseMinY - 1e-6 || y + mH > baseMaxY + 1e-6;
+      if (!isExtended) {
+        if (!corners.every((c) => inPoly2D(c, poly))) continue;
+        if (!inPoly2D(center, poly)) continue;
+      }
       if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
 
       result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
