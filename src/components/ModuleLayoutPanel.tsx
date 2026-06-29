@@ -144,7 +144,7 @@ export default function ModuleLayoutPanel({
         >
           <div
             className="bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ maxWidth: "90vw", maxHeight: "92vh" }}
+            style={{ maxWidth: "95vw", maxHeight: "95vh" }}
             onClick={e => e.stopPropagation()}
           >
             {/* 모달 헤더 */}
@@ -166,13 +166,13 @@ export default function ModuleLayoutPanel({
               </div>
             </div>
             {/* 미리보기 이미지 */}
-            <div className="overflow-auto flex-1 bg-gray-200 p-3">
+            <div className="flex-1 bg-gray-300 overflow-hidden flex items-center justify-center p-2" style={{ minHeight: 0 }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={previewDataUrl}
                 alt="도면 미리보기"
-                className="shadow-lg"
-                style={{ maxWidth: "100%", display: "block" }}
+                className="shadow-xl"
+                style={{ maxWidth: "100%", maxHeight: "calc(95vh - 70px)", objectFit: "contain", display: "block" }}
               />
             </div>
           </div>

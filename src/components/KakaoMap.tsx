@@ -195,6 +195,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // Module layout refs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moduleLayersRef = useRef<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const moduleRendererRef = useRef<any>(null);
   const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,6 +214,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     if (!config?.enabled || !map || !L) {
       onModuleCountsChangeRef.current([]);
       return;
+    }
+
+    // Canvas renderer so html2canvas can capture module polygons directly (SVG cannot be captured)
+    if (!moduleRendererRef.current) {
+      moduleRendererRef.current = L.canvas();
     }
 
     const allExclusionCoords = exclusionPolygonsRef.current.map((p) => p.coords);
@@ -236,6 +243,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           weight: 0.8,
           fillColor: "#d7bde2",
           fillOpacity: 0.55,
+          renderer: moduleRendererRef.current,
         }).addTo(map);
         moduleLayersRef.current.push(poly);
       });
@@ -703,7 +711,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const mapEl = mapRef.current;
       if (!mapEl || !map) return "";
 
-      // Hide polygon fills/borders for clean map print
+      // Hide inclusion/exclusion polygon fills/borders only.
+      // Module layers use L.canvas() renderer and are captured directly by html2canvas.
       polygonsRef.current.forEach(p => {
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
@@ -712,8 +721,6 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
       });
-      // Hide SVG module layers — draw them manually on canvas
-      moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 0, fillOpacity: 0 }));
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
 
       await new Promise(r => setTimeout(r, 200));
@@ -729,29 +736,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       const ctx = canvas.getContext("2d")!;
 
-      // Draw module polygons manually (SVG not captured by html2canvas)
-      moduleLayersRef.current.forEach(poly => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const lls: any = poly.getLatLngs();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const ring: any[] = Array.isArray(lls[0]) ? lls[0] : lls;
-          if (ring.length < 3) return;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const pts = ring.map((ll: any) => map.latLngToContainerPoint(ll));
-          ctx.beginPath();
-          ctx.moveTo(pts[0].x * SCALE, pts[0].y * SCALE);
-          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * SCALE, pts[i].y * SCALE);
-          ctx.closePath();
-          ctx.fillStyle = "rgba(215, 189, 226, 0.65)";
-          ctx.strokeStyle = "#9b59b6";
-          ctx.lineWidth = 1.2;
-          ctx.fill();
-          ctx.stroke();
-        } catch { /* skip */ }
-      });
-
-      // Draw zone labels on map image
+      // Draw zone labels on map image (div markers are not captured by html2canvas)
       const FONT_SIZE = 22 * SCALE;
       polygonsRef.current.forEach((polyData, i) => {
         try {
@@ -771,7 +756,6 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           const bgW = tw + padX * 2, bgH = FONT_SIZE + padY * 2;
           const r = 8 * SCALE;
 
-          // Rounded rect background
           ctx.fillStyle = color;
           ctx.beginPath();
           ctx.moveTo(px - bgW / 2 + r, py - bgH / 2);
@@ -803,18 +787,19 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1 });
         p.labelMarker.setOpacity(1);
       });
-      moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 1, fillOpacity: 0.55, color: "#9b59b6", fillColor: "#d7bde2" }));
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 1, fillOpacity: 0.04 });
 
-      // Crop canvas to print area bounds if set (no map move needed)
+      // Crop canvas to print area bounds if set
       if (printBoundsRef.current) {
         const [[south, west], [north, east]] = printBoundsRef.current;
         const nw = map.latLngToContainerPoint([north, west]);
         const se = map.latLngToContainerPoint([south, east]);
-        const cx = Math.round(Math.max(0, nw.x) * SCALE);
-        const cy = Math.round(Math.max(0, nw.y) * SCALE);
-        const cw = Math.round(Math.min(canvas.width, se.x * SCALE)) - cx;
-        const ch = Math.round(Math.min(canvas.height, se.y * SCALE)) - cy;
+        const cx = Math.max(0, Math.round(nw.x * SCALE));
+        const cy = Math.max(0, Math.round(nw.y * SCALE));
+        const seX = Math.min(canvas.width, Math.round(se.x * SCALE));
+        const seY = Math.min(canvas.height, Math.round(se.y * SCALE));
+        const cw = seX - cx;
+        const ch = seY - cy;
         if (cw > 20 && ch > 20) {
           const cropped = document.createElement("canvas");
           cropped.width = cw;
