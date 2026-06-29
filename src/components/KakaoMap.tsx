@@ -866,7 +866,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     setIsDragMode(false);
     isDragModeRef.current = false;
     const map = mapInstanceRef.current;
-    if (map) map.getContainer().style.cursor = '';
+    if (map) {
+      map.dragging.enable();
+      map.getContainer().style.cursor = '';
+    }
   }, []);
 
   const startDragMode = useCallback(() => {
@@ -875,7 +878,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     setIsDragMode(true);
     isDragModeRef.current = true;
     const map = mapInstanceRef.current;
-    if (map) map.getContainer().style.cursor = 'default';
+    if (map) {
+      map.dragging.disable();
+      map.getContainer().style.cursor = 'default';
+    }
   }, [cancelCurrentDrawing, stopLocating]);
 
   const isAnyDrawing = isDrawing || isRectDrawing;
@@ -912,29 +918,6 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         scale: SCALE,
         logging: false,
         backgroundColor: "#f0f0f0",
-      });
-
-      const ctx = canvas.getContext("2d")!;
-
-      // Draw zone labels on map image (div markers not captured by html2canvas)
-      polygonsRef.current.forEach((polyData, i) => {
-        try {
-          const markerLatLng = polyData.labelMarker.getLatLng();
-          const pt = map.latLngToContainerPoint(markerLatLng);
-          const shortLabel = polyData.label.replace("구역", "").trim();
-          const px = pt.x * SCALE + 2 * SCALE;
-          const py = pt.y * SCALE + 2 * SCALE;
-          const color = getColor(i);
-
-          ctx.font = `bold ${22 * SCALE}px "Malgun Gothic", Arial, sans-serif`;
-          ctx.textAlign = "left";
-          ctx.textBaseline = "top";
-          ctx.strokeStyle = "rgba(0,0,0,0.65)";
-          ctx.lineWidth = 3 * SCALE;
-          ctx.strokeText(shortLabel, px, py);
-          ctx.fillStyle = color;
-          ctx.fillText(shortLabel, px, py);
-        } catch { /* skip */ }
       });
 
       // Restore Leaflet UI controls
