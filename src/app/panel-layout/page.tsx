@@ -20,16 +20,20 @@ export default function LayoutPage() {
   const [moduleCounts, setModuleCounts] = useState<number[]>([]);
   const [zoneLabels, setZoneLabels] = useState<string[]>([]);
   const mapRef = useRef<KakaoMapHandle>(null);
+  const prevInclusionCountRef = useRef(0);
 
   useEffect(() => {
     const inclusions = polygons.filter(p => p.type === 'inclusion');
-    setZoneLabels(prev => {
-      const next = [...prev];
-      while (next.length < inclusions.length) {
-        next.push(String.fromCharCode(65 + next.length) + "구역");
-      }
-      return next.slice(0, inclusions.length);
-    });
+    if (inclusions.length > prevInclusionCountRef.current) {
+      setZoneLabels(prev => {
+        const next = [...prev];
+        while (next.length < inclusions.length) {
+          next.push(String.fromCharCode(65 + next.length) + "구역");
+        }
+        return next;
+      });
+    }
+    prevInclusionCountRef.current = inclusions.length;
   }, [polygons]);
 
   const handleZoneLabelChange = useCallback((index: number, label: string) => {
@@ -39,6 +43,16 @@ export default function LayoutPage() {
       return next;
     });
     mapRef.current?.renameZone(index, label);
+  }, []);
+
+  const handleZoneAngleChange = useCallback((index: number, angle: number) => {
+    mapRef.current?.setZoneAngle(index, angle);
+  }, []);
+
+  const handleZoneRemove = useCallback((index: number) => {
+    mapRef.current?.removeZone(index);
+    setZoneLabels(prev => prev.filter((_, i) => i !== index));
+    prevInclusionCountRef.current = Math.max(0, prevInclusionCountRef.current - 1);
   }, []);
 
 
@@ -100,6 +114,8 @@ export default function LayoutPage() {
             mapRef={mapRef}
             zoneLabels={zoneLabels}
             onZoneLabelChange={handleZoneLabelChange}
+            onZoneAngleChange={handleZoneAngleChange}
+            onZoneRemove={handleZoneRemove}
           />
         </div>
       </main>

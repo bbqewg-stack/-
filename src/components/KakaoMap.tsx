@@ -23,6 +23,8 @@ interface PolygonData {
 export interface KakaoMapHandle {
   captureMapImage: () => Promise<string>;
   renameZone: (index: number, label: string) => void;
+  setZoneAngle: (index: number, angle: number) => void;
+  removeZone: (index: number) => void;
 }
 
 interface KakaoMapProps {
@@ -202,6 +204,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const zoneCapacitiesRef = useRef<number[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const notifyAreasRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const renderModulesRef = useRef<any>(null);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
 
@@ -280,9 +287,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       if (modules.length > 0 && isFinite(modNwLat)) {
         const shortLabel = polygonData.label.replace("구역", "").trim();
         const capacityKw = (modules.length * config.moduleWattage) / 1000;
+        zoneCapacitiesRef.current[zoneIndex] = capacityKw;
         const capacityText = capacityKw >= 1000
           ? (capacityKw / 1000).toFixed(2) + "MW"
-          : Math.round(capacityKw) + "kW";
+          : capacityKw.toFixed(2) + "kW";
         const ts = "-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8)";
         polygonData.labelMarker.setIcon(L.divIcon({
           html: `<div style="pointer-events:none;line-height:1.15;"><div style="color:${zoneColor};font-size:18px;font-weight:900;text-shadow:${ts};">${shortLabel}</div><div style="color:${zoneColor};font-size:10px;font-weight:800;text-shadow:${ts};">${capacityText}</div></div>`,
@@ -495,6 +503,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     onAreasChange([...inclusions, ...exclusions]);
     renderModules();
   }, [onAreasChange, renderModules]);
+
+  useEffect(() => { notifyAreasRef.current = notifyAreas; }, [notifyAreas]);
+  useEffect(() => { renderModulesRef.current = renderModules; }, [renderModules]);
 
   // --- Polygon drawing ---
   const startDrawing = useCallback((mode: 'inclusion' | 'exclusion' = 'inclusion') => {
@@ -883,12 +894,37 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const color = getColor(index);
       const shortLabel = label.replace("구역", "").trim();
       const ts = "-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8)";
-      const labelIcon = L.divIcon({
-        html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:${ts};">${shortLabel}</div>`,
-        className: "",
-        iconAnchor: [0, 0],
-      });
-      polyData.labelMarker.setIcon(labelIcon);
+      const capacityKw = zoneCapacitiesRef.current[index];
+      if (capacityKw !== undefined && capacityKw > 0) {
+        const capacityText = capacityKw >= 1000
+          ? (capacityKw / 1000).toFixed(2) + "MW"
+          : capacityKw.toFixed(2) + "kW";
+        polyData.labelMarker.setIcon(L.divIcon({
+          html: `<div style="pointer-events:none;line-height:1.15;"><div style="color:${color};font-size:18px;font-weight:900;text-shadow:${ts};">${shortLabel}</div><div style="color:${color};font-size:10px;font-weight:800;text-shadow:${ts};">${capacityText}</div></div>`,
+          className: "", iconAnchor: [0, 0],
+        }));
+      } else {
+        polyData.labelMarker.setIcon(L.divIcon({
+          html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:${ts};">${shortLabel}</div>`,
+          className: "", iconAnchor: [0, 0],
+        }));
+      }
+    },
+    setZoneAngle: (index: number, angle: number) => {
+      const poly = polygonsRef.current[index];
+      if (!poly) return;
+      poly.angle = angle;
+      notifyAreasRef.current?.();
+    },
+    removeZone: (index: number) => {
+      const poly = polygonsRef.current[index];
+      if (!poly) return;
+      poly.leafletPolygon.remove();
+      poly.labelMarker.remove();
+      polygonsRef.current = polygonsRef.current.filter((_, i) => i !== index);
+      zoneCapacitiesRef.current = zoneCapacitiesRef.current.filter((_, i) => i !== index);
+      setPolygonCount(polygonsRef.current.length);
+      notifyAreasRef.current?.();
     },
   }), []);
 

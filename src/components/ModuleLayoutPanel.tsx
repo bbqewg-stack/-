@@ -17,6 +17,8 @@ interface ModuleLayoutPanelProps {
   mapRef?: RefObject<KakaoMapHandle | null>;
   zoneLabels?: string[];
   onZoneLabelChange?: (index: number, label: string) => void;
+  onZoneAngleChange?: (index: number, angle: number) => void;
+  onZoneRemove?: (index: number) => void;
 }
 
 function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
@@ -57,6 +59,8 @@ export default function ModuleLayoutPanel({
   mapRef,
   zoneLabels,
   onZoneLabelChange,
+  onZoneAngleChange,
+  onZoneRemove,
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
@@ -316,6 +320,13 @@ export default function ModuleLayoutPanel({
                       {Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²
                     </span>
                   )}
+                  {onZoneRemove && (
+                    <button
+                      onClick={() => onZoneRemove(i)}
+                      className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5"
+                      title="구역 삭제"
+                    >✕</button>
+                  )}
                 </div>
               );
             })}
@@ -353,6 +364,25 @@ export default function ModuleLayoutPanel({
           {inclusions.length > 1 && totalModules > 0 && (
             <div className="mt-3 pt-3 border-t space-y-2">
               <p className="text-xs font-semibold text-gray-500">영역별 내역</p>
+
+              {/* 구역별 합계 요약 */}
+              <div className="bg-white rounded p-2 border space-y-1">
+                {inclusions.map((_, i) => {
+                  const cnt = moduleCounts[i] ?? 0;
+                  const kw = (cnt * moduleConfig.moduleWattage) / 1000;
+                  const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+                  const lbl = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
+                  return (
+                    <div key={i} className="flex justify-between items-center">
+                      <span className="text-xs font-bold" style={{ color }}>{lbl} 합계</span>
+                      <span className="text-xs font-bold" style={{ color }}>
+                        {kw >= 1000 ? (kw / 1000).toFixed(2) + " MW" : kw.toFixed(2) + " kW"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
               {inclusions.map((_, i) => {
                 const cnt = moduleCounts[i] ?? 0;
                 const kw = (cnt * moduleConfig.moduleWattage) / 1000;
@@ -365,9 +395,21 @@ export default function ModuleLayoutPanel({
                       <span className="text-xs font-medium text-gray-600">
                         {zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역"}
                       </span>
-                      {polyAngle !== undefined && (
+                      {polyAngle !== undefined && onZoneAngleChange ? (
+                        <div className="flex items-center gap-0.5 ml-1">
+                          <input
+                            type="number"
+                            defaultValue={polyAngle.toFixed(1)}
+                            min={-90} max={90} step={0.5}
+                            onBlur={e => onZoneAngleChange(i, parseFloat(e.target.value) || 0)}
+                            onKeyDown={e => e.key === "Enter" && onZoneAngleChange(i, parseFloat((e.target as HTMLInputElement).value) || 0)}
+                            className="text-xs border rounded px-1 py-0 w-14 text-center outline-none focus:border-blue-400"
+                          />
+                          <span className="text-xs text-gray-400">°</span>
+                        </div>
+                      ) : polyAngle !== undefined ? (
                         <span className="text-xs text-gray-400 ml-1">{polyAngle.toFixed(1)}°</span>
-                      )}
+                      ) : null}
                       <span className="text-xs text-purple-600 ml-auto font-semibold">{cnt.toLocaleString("ko")} 개</span>
                     </div>
                     <div className="flex justify-between">
