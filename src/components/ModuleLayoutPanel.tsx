@@ -64,6 +64,7 @@ export default function ModuleLayoutPanel({
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
+  const [modulesPerString, setModulesPerString] = useState(0);
   const [printState, setPrintState] = useState<'idle' | 'capturing' | 'preview'>('idle');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
 
@@ -80,10 +81,19 @@ export default function ModuleLayoutPanel({
   });
 
   const totalArea = Math.max(0, inclusions.reduce((s, p) => s + p.area, 0) - exclusions.reduce((s, p) => s + p.area, 0));
-  const totalModules = moduleCounts.reduce((s, n) => s + n, 0);
+
+  // 결선 조정 계산
+  const rawCounts = inclusions.map((_, i) => moduleCounts[i] ?? 0);
+  const totalRawModules = rawCounts.reduce((s, n) => s + n, 0);
+  const adjustedCounts = rawCounts.map(raw =>
+    modulesPerString > 1 ? Math.floor(raw / modulesPerString) * modulesPerString : raw
+  );
+  const totalModules = adjustedCounts.reduce((s, n) => s + n, 0);
+  const totalStrings = modulesPerString > 1 ? totalModules / modulesPerString : 0;
+
   const capacityKw = (totalModules * moduleConfig.moduleWattage) / 1000;
   const annualMwh = (capacityKw * peakSunHours * 365 * systemEfficiency / 100) / 1000;
-  const isAtLimit = totalModules >= MODULE_LAYOUT_LIMIT;
+  const isAtLimit = totalRawModules >= MODULE_LAYOUT_LIMIT;
 
   const set = (patch: Partial<ModuleConfig>) =>
     onModuleConfigChange({ ...moduleConfig, ...patch });
@@ -95,8 +105,8 @@ export default function ModuleLayoutPanel({
       zones: inclusions.map((inc, i) => ({
         label: zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역",
         color: POLYGON_COLORS[i % POLYGON_COLORS.length],
-        moduleCount: moduleCounts[i] ?? 0,
-        capacityKw: ((moduleCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
+        moduleCount: adjustedCounts[i] ?? 0,
+        capacityKw: ((adjustedCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
         angle: inc.angle ?? 0,
       })),
       totalModules,
@@ -284,6 +294,19 @@ export default function ModuleLayoutPanel({
         </div>
       </div>
 
+      {/* 전기 결선 설정 */}
+      <div className="bg-white border rounded-lg p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-3">전기 결선 설정</p>
+        <LabelRow label="스트링 결선 수량">
+          <div className="flex items-center gap-1">
+            <NumInput value={modulesPerString} min={0} max={100} step={1}
+              onChange={setModulesPerString} />
+            <span className="text-xs text-gray-400">개/스트링</span>
+          </div>
+        </LabelRow>
+        <p className="text-xs text-gray-400 mt-2">0 입력 시 결선 조정 없음</p>
+      </div>
+
       {/* 선택 영역 */}
       {inclusions.length > 0 && (
         <div className="bg-blue-50 rounded-lg p-4">
@@ -338,11 +361,20 @@ export default function ModuleLayoutPanel({
       {moduleConfig.enabled ? (
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
           <p className="text-xs font-semibold text-gray-600 mb-3">배치 결과</p>
-          {totalModules > 0 ? (
+          {totalRawModules > 0 ? (
             <div className="space-y-2">
               <ResultRow label="배치 모듈 수"
-                value={`${totalModules.toLocaleString("ko")} 개`
+                value={`${totalRawModules.toLocaleString("ko")} 개`
                   + (isAtLimit ? " ⚠️" : "")} />
+              {modulesPerString > 1 && (
+                <>
+                  <ResultRow label="결선 수량"
+                    value={`${modulesPerString} 개/스트링`} />
+                  <ResultRow label="확정 모듈 수"
+                    value={`${totalModules.toLocaleString("ko")} 개 (${totalStrings}스트링)`}
+                    highlight />
+                </>
+              )}
               <ResultRow label="패널 면적"
                 value={`${(totalModules * moduleConfig.moduleWidth * moduleConfig.moduleHeight / 1_000_000).toFixed(1)} m²`} />
               <ResultRow label="설치 용량"
@@ -361,7 +393,7 @@ export default function ModuleLayoutPanel({
           )}
 
           {/* 영역별 내역 */}
-          {inclusions.length > 1 && totalModules > 0 && (
+          {inclusions.length > 1 && totalRawModules > 0 && (
             <div className="mt-3 pt-3 border-t space-y-2">
               <p className="text-xs font-semibold text-gray-500">영역별 내역</p>
 
@@ -370,7 +402,7 @@ export default function ModuleLayoutPanel({
                 {(() => {
                   const grouped = new Map<string, { kw: number; color: string }>();
                   inclusions.forEach((_, i) => {
-                    const cnt = moduleCounts[i] ?? 0;
+                    const cnt = adjustedCounts[i] ?? 0;
                     const kw = (cnt * moduleConfig.moduleWattage) / 1000;
                     const lbl = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
                     const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
@@ -392,7 +424,8 @@ export default function ModuleLayoutPanel({
               </div>
 
               {inclusions.map((_, i) => {
-                const cnt = moduleCounts[i] ?? 0;
+                const rawCnt = rawCounts[i] ?? 0;
+                const cnt = adjustedCounts[i] ?? 0;
                 const kw = (cnt * moduleConfig.moduleWattage) / 1000;
                 const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
                 const polyAngle = inclusions[i]?.angle;
@@ -418,7 +451,15 @@ export default function ModuleLayoutPanel({
                       ) : polyAngle !== undefined ? (
                         <span className="text-xs text-gray-400 ml-1">{polyAngle.toFixed(1)}°</span>
                       ) : null}
-                      <span className="text-xs text-purple-600 ml-auto font-semibold">{cnt.toLocaleString("ko")} 개</span>
+                      <div className="ml-auto text-right">
+                        {modulesPerString > 1 && rawCnt !== cnt && (
+                          <span className="text-xs text-gray-400 line-through mr-1">{rawCnt.toLocaleString("ko")}</span>
+                        )}
+                        <span className="text-xs text-purple-600 font-semibold">{cnt.toLocaleString("ko")} 개</span>
+                        {modulesPerString > 1 && cnt > 0 && (
+                          <span className="text-xs text-gray-400 ml-1">({cnt / modulesPerString}스트링)</span>
+                        )}
+                      </div>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-xs text-gray-500">설치 용량</span>
