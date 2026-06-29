@@ -64,12 +64,14 @@ function getCentroid(vertices: [number, number][]): [number, number] {
   return [lat, lng];
 }
 
-// Detect dominant angle from polygon edges (angle of longest edge, -90~90°)
+// Detect facing azimuth from polygon edges (CW from North, 0-360°)
+// Facing azimuth = direction modules face = row_direction + 90°
+// For E-W rows (longest edge pointing East), facing azimuth = 180° (South-facing)
 function detectPolygonAngle(coords: Coord[]): number {
-  if (coords.length < 2) return 0;
+  if (coords.length < 2) return 180;
   const avgLat = coords.reduce((s, c) => s + c.lat, 0) / coords.length;
   const cosLat = Math.cos(avgLat * Math.PI / 180);
-  let bestLen = 0, bestAngle = 0;
+  let bestLen = 0, bestMathAngle = 0;
   for (let i = 0; i < coords.length; i++) {
     const j = (i + 1) % coords.length;
     const dx = (coords[j].lng - coords[i].lng) * cosLat;
@@ -77,23 +79,23 @@ function detectPolygonAngle(coords: Coord[]): number {
     const len = Math.sqrt(dx * dx + dy * dy);
     if (len > bestLen) {
       bestLen = len;
-      bestAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+      bestMathAngle = Math.atan2(dy, dx) * 180 / Math.PI;
     }
   }
-  while (bestAngle > 90) bestAngle -= 180;
-  while (bestAngle < -90) bestAngle += 180;
-  return Math.round(bestAngle * 100) / 100;
+  // Convert math angle (CCW from East) to facing azimuth (CW from North)
+  // facing = (180 - math_angle + 360) % 360
+  const azimuth = ((180 - bestMathAngle) + 360) % 360;
+  return Math.round(azimuth * 10) / 10;
 }
 
-// Angle of edge P1→P2 normalized to -90~90°
+// Facing azimuth of rectangle edge P1→P2 (CW from North, 0-360°)
 function edgeAngle(p1: [number, number], p2: [number, number]): number {
   const cosLat = Math.cos(p1[0] * Math.PI / 180);
   const dx = (p2[1] - p1[1]) * cosLat;
   const dy = p2[0] - p1[0];
-  let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-  while (angle > 90) angle -= 180;
-  while (angle < -90) angle += 180;
-  return Math.round(angle * 100) / 100;
+  const mathAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const azimuth = ((180 - mathAngle) + 360) % 360;
+  return Math.round(azimuth * 10) / 10;
 }
 
 // Compute 4 rectangle corners: P1,P2 define one edge; P3 defines width
@@ -715,6 +717,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     const marker = L.marker([lat, lon], { icon }).addTo(map)
       .bindPopup(`<strong>${result.display_name.split(",")[0]}</strong><br/><span style="font-size:11px;color:#666">${result.display_name}</span>`, { maxWidth: 250 })
       .openPopup();
+    marker.on('popupclose', () => {
+      if (parcelPolygonRef.current) { parcelPolygonRef.current.remove(); parcelPolygonRef.current = null; }
+      if (searchMarkerRef.current) { searchMarkerRef.current.remove(); searchMarkerRef.current = null; }
+    });
     searchMarkerRef.current = marker;
     map.setView([lat, lon], 17);
     setIsLoadingParcel(true);
@@ -812,6 +818,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       });
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
 
+      // Hide Leaflet UI controls (+/- zoom, attribution) before capture
+      const controlEls = mapEl.querySelectorAll<HTMLElement>('.leaflet-control-container');
+      controlEls.forEach(el => { el.style.visibility = 'hidden'; });
+
       await new Promise(r => setTimeout(r, 200));
 
       const SCALE = 3;
@@ -845,6 +855,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           ctx.fillText(shortLabel, px, py);
         } catch { /* skip */ }
       });
+
+      // Restore Leaflet UI controls
+      controlEls.forEach(el => { el.style.visibility = ''; });
 
       // Restore styles (modules present → keep zones hidden, else restore)
       const hasModules = moduleLayersRef.current.length > 0;

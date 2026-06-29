@@ -476,9 +476,9 @@ export default function ModuleLayoutPanel({
                           <input
                             type="number"
                             value={polyAngle.toFixed(1)}
-                            min={-90} max={90} step={0.5}
+                            min={0} max={360} step={0.5}
                             onChange={e => onZoneAngleChange(i, parseFloat(e.target.value) || 0)}
-                            className="text-xs border rounded px-1 py-0 w-14 text-center outline-none focus:border-blue-400"
+                            className="text-xs border rounded px-1 py-0 w-16 text-center outline-none focus:border-blue-400"
                           />
                           <span className="text-xs text-gray-400">°</span>
                         </div>

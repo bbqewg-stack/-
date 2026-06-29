@@ -221,9 +221,9 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   </div>
 
   <!-- ── MAP AREA ── -->
-  <div style="position:absolute;left:${mapLeft}px;top:${mapTop}px;width:${mapW}px;height:${mapH}px;overflow:hidden;">
+  <div style="position:absolute;left:${mapLeft}px;top:${mapTop}px;width:${mapW}px;height:${mapH}px;overflow:hidden;background:#1a2232;display:flex;align-items:center;justify-content:center;">
     ${data.mapImageDataUrl
-      ? `<img src="${data.mapImageDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+      ? `<img src="${data.mapImageDataUrl}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto;position:absolute;inset:0;" />`
       : `<div style="width:100%;height:100%;background:#e8edf2;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:18px;">지도 이미지</div>`
     }
     <!-- North arrow -->

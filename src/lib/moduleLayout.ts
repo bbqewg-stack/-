@@ -5,7 +5,7 @@ export interface ModuleConfig {
   moduleWattage: number;  // W per panel
   rowSpacing: number;     // mm between rows
   colSpacing: number;     // mm between columns
-  angle: number;          // grid rotation degrees (CCW from east)
+  angle: number;          // module facing azimuth degrees (CW from North, 0-360)
   maxModulesPerColumn: number; // max vertical modules per block (0 = unlimited)
 }
 
@@ -21,7 +21,7 @@ export const DEFAULT_MODULE_CONFIG: ModuleConfig = {
   moduleWattage: 550,
   rowSpacing: 10,
   colSpacing: 10,
-  angle: 0,
+  angle: 180,
   maxModulesPerColumn: 5,
 };
 
@@ -89,10 +89,14 @@ export function calculateModuleLayout(
     lng: polygonCoords.reduce((s, c) => s + c.lng, 0) / polygonCoords.length,
   };
 
+  // Convert facing azimuth (CW from North) to math rotation angle (CCW from East)
+  // azimuth 180° (South) → mathAngle 0° (E-W grid, standard south-facing)
+  const mathAngle = 180 - config.angle;
+
   // Rotate everything into the grid frame
-  const poly = polygonCoords.map((c) => rot(toXY(c, origin), -config.angle));
+  const poly = polygonCoords.map((c) => rot(toXY(c, origin), -mathAngle));
   const excls = exclusionCoordsList.map((exc) =>
-    exc.map((c) => rot(toXY(c, origin), -config.angle))
+    exc.map((c) => rot(toXY(c, origin), -mathAngle))
   );
 
   const xs = poly.map((p) => p.x), ys = poly.map((p) => p.y);
@@ -130,7 +134,7 @@ export function calculateModuleLayout(
       if (!inPoly2D(center, poly)) continue;
       if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
 
-      result.push(corners.map((c) => fromXY(rot(c, config.angle), origin)));
+      result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
       placedInCol++;
 
       if (result.length >= MODULE_LAYOUT_LIMIT) return result;
