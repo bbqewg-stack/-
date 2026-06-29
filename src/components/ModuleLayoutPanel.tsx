@@ -48,7 +48,8 @@ export default function ModuleLayoutPanel({
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
-  const [isPrinting, setIsPrinting] = useState(false);
+  const [printState, setPrintState] = useState<'idle' | 'capturing' | 'preview'>('idle');
+  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
 
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
@@ -71,35 +72,54 @@ export default function ModuleLayoutPanel({
   const set = (patch: Partial<ModuleConfig>) =>
     onModuleConfigChange({ ...moduleConfig, ...patch });
 
-  const handlePrint = async () => {
-    if (!mapRef?.current) return;
-    setIsPrinting(true);
-    try {
-      const { generatePdf } = await import("@/lib/generatePdf");
-      const mapImageDataUrl = await mapRef.current.captureMapImage();
-      const zones = inclusions.map((inc, i) => ({
+  const buildPdfData = async () => {
+    const mapImageDataUrl = await mapRef!.current!.captureMapImage();
+    return {
+      mapImageDataUrl,
+      zones: inclusions.map((inc, i) => ({
         label: String.fromCharCode(65 + i) + "구역",
         color: POLYGON_COLORS[i % POLYGON_COLORS.length],
         moduleCount: moduleCounts[i] ?? 0,
         capacityKw: ((moduleCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
         angle: inc.angle ?? 0,
-      }));
-      await generatePdf({
-        mapImageDataUrl,
-        zones,
-        totalModules,
-        totalCapacityKw: capacityKw,
-        moduleWidth: moduleConfig.moduleWidth,
-        moduleHeight: moduleConfig.moduleHeight,
-        moduleWattage: moduleConfig.moduleWattage,
-        rowSpacing: moduleConfig.rowSpacing,
-        colSpacing: moduleConfig.colSpacing,
-        location: "",
-        projectName: "태양광 발전소",
-      });
-    } finally {
-      setIsPrinting(false);
+      })),
+      totalModules,
+      totalCapacityKw: capacityKw,
+      moduleWidth: moduleConfig.moduleWidth,
+      moduleHeight: moduleConfig.moduleHeight,
+      moduleWattage: moduleConfig.moduleWattage,
+      rowSpacing: moduleConfig.rowSpacing,
+      colSpacing: moduleConfig.colSpacing,
+      location: "",
+      projectName: "태양광 발전소",
+    };
+  };
+
+  const handlePrint = async () => {
+    if (!mapRef?.current) return;
+    setPrintState('capturing');
+    try {
+      const { generatePreviewImage } = await import("@/lib/generatePdf");
+      const data = await buildPdfData();
+      const url = await generatePreviewImage(data);
+      setPreviewDataUrl(url);
+      setPrintState('preview');
+    } catch {
+      setPrintState('idle');
     }
+  };
+
+  const handleConfirmPrint = async () => {
+    if (!previewDataUrl) return;
+    const { savePdfFromImage } = await import("@/lib/generatePdf");
+    await savePdfFromImage(previewDataUrl);
+    setPrintState('idle');
+    setPreviewDataUrl(null);
+  };
+
+  const handleCancelPreview = () => {
+    setPrintState('idle');
+    setPreviewDataUrl(null);
   };
 
   return (
@@ -109,11 +129,54 @@ export default function ModuleLayoutPanel({
       {mapRef && totalModules > 0 && (
         <button
           onClick={handlePrint}
-          disabled={isPrinting}
+          disabled={printState !== 'idle'}
           className="w-full py-2 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
         >
-          {isPrinting ? "PDF 생성 중..." : "📄 도면 PDF 인쇄"}
+          {printState === 'capturing' ? "캡처 중..." : "📄 도면 PDF 인쇄"}
         </button>
+      )}
+
+      {/* 미리보기 모달 */}
+      {printState === 'preview' && previewDataUrl && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4"
+          onClick={handleCancelPreview}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ maxWidth: "90vw", maxHeight: "92vh" }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between px-5 py-3 border-b bg-gray-50">
+              <span className="font-bold text-gray-800 text-base">도면 미리보기</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelPreview}
+                  className="px-4 py-1.5 text-sm rounded bg-gray-200 hover:bg-gray-300 font-medium"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleConfirmPrint}
+                  className="px-4 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 font-medium"
+                >
+                  PDF 저장
+                </button>
+              </div>
+            </div>
+            {/* 미리보기 이미지 */}
+            <div className="overflow-auto flex-1 bg-gray-200 p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={previewDataUrl}
+                alt="도면 미리보기"
+                className="shadow-lg"
+                style={{ maxWidth: "100%", display: "block" }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 모듈 규격 */}

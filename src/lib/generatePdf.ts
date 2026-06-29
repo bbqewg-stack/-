@@ -211,6 +211,67 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 </html>`;
 }
 
+/** Renders the template to a canvas and returns a data URL for preview */
+export async function generatePreviewImage(data: PdfReportData): Promise<string> {
+  const html2canvas = (await import("html2canvas")).default;
+
+  let logoDataUrl: string | null = null;
+  try {
+    const res = await fetch("/company-logo.png");
+    const blob = await res.blob();
+    logoDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch { /* logo optional */ }
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:1680px;height:1188px;border:none;visibility:hidden;";
+  document.body.appendChild(iframe);
+
+  try {
+    iframe.contentDocument!.open();
+    iframe.contentDocument!.write(buildHtml(data, logoDataUrl));
+    iframe.contentDocument!.close();
+
+    await new Promise<void>(resolve => {
+      const imgs = Array.from(iframe.contentDocument!.querySelectorAll("img"));
+      if (imgs.length === 0) { resolve(); return; }
+      let loaded = 0;
+      const done = () => { if (++loaded >= imgs.length) resolve(); };
+      imgs.forEach(img => { if (img.complete) done(); else { img.onload = done; img.onerror = done; } });
+      setTimeout(resolve, 4000);
+    });
+
+    await new Promise(r => setTimeout(r, 300));
+
+    const el = iframe.contentDocument!.getElementById("drawing") as HTMLElement;
+    const canvas = await html2canvas(el, {
+      scale: 1,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      width: 1680,
+      height: 1188,
+      backgroundColor: "#ffffff",
+    });
+    return canvas.toDataURL("image/jpeg", 0.93);
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
+/** Saves a preview data URL directly as a PDF file */
+export async function savePdfFromImage(imageDataUrl: string): Promise<void> {
+  const { default: jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+  pdf.addImage(imageDataUrl, "JPEG", 0, 0, 420, 297);
+  pdf.save("태양광_배치도.pdf");
+}
+
+/** @deprecated use generatePreviewImage + savePdfFromImage */
 export async function generatePdf(data: PdfReportData): Promise<void> {
   const html2canvas = (await import("html2canvas")).default;
   const { default: jsPDF } = await import("jspdf");

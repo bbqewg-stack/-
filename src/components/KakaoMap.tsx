@@ -703,17 +703,6 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const mapEl = mapRef.current;
       if (!mapEl || !map) return "";
 
-      // Save current view to restore later
-      const savedCenter = map.getCenter();
-      const savedZoom = map.getZoom();
-
-      // Fit to print bounds if set, then wait for tiles
-      if (printBoundsRef.current) {
-        if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
-        map.fitBounds(printBoundsRef.current, { animate: false, padding: [0, 0] });
-        await new Promise(r => setTimeout(r, 1200));
-      }
-
       // Hide polygon fills/borders for clean map print
       polygonsRef.current.forEach(p => {
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
@@ -723,8 +712,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
       });
-      // Hide SVG module layers — will draw them manually on canvas
+      // Hide SVG module layers — draw them manually on canvas
       moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 0, fillOpacity: 0 }));
+      if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
 
       await new Promise(r => setTimeout(r, 200));
 
@@ -737,14 +727,15 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         backgroundColor: "#f0f0f0",
       });
 
-      // Draw module polygons manually on canvas (bypasses SVG capture issues)
       const ctx = canvas.getContext("2d")!;
+
+      // Draw module polygons manually (SVG not captured by html2canvas)
       moduleLayersRef.current.forEach(poly => {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const lls: any = poly.getLatLngs();
-          // getLatLngs returns LatLng[][] for simple polygon
-          const ring: { lat: number; lng: number }[] = Array.isArray(lls[0]) ? lls[0] : lls;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ring: any[] = Array.isArray(lls[0]) ? lls[0] : lls;
           if (ring.length < 3) return;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const pts = ring.map((ll: any) => map.latLngToContainerPoint(ll));
@@ -757,12 +748,52 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           ctx.lineWidth = 1.2;
           ctx.fill();
           ctx.stroke();
-        } catch { /* skip invalid polygon */ }
+        } catch { /* skip */ }
       });
 
-      const dataUrl = canvas.toDataURL("image/png");
+      // Draw zone labels on map image
+      const FONT_SIZE = 22 * SCALE;
+      polygonsRef.current.forEach((polyData, i) => {
+        try {
+          const centroid = {
+            lat: polyData.coords.reduce((s, c) => s + c.lat, 0) / polyData.coords.length,
+            lng: polyData.coords.reduce((s, c) => s + c.lng, 0) / polyData.coords.length,
+          };
+          const pt = map.latLngToContainerPoint(centroid);
+          const label = String.fromCharCode(65 + i) + "구역";
+          const px = pt.x * SCALE;
+          const py = pt.y * SCALE;
+          const color = getColor(i);
 
-      // Restore polygon styles
+          ctx.font = `bold ${FONT_SIZE}px "Malgun Gothic", Arial, sans-serif`;
+          const tw = ctx.measureText(label).width;
+          const padX = 10 * SCALE, padY = 5 * SCALE;
+          const bgW = tw + padX * 2, bgH = FONT_SIZE + padY * 2;
+          const r = 8 * SCALE;
+
+          // Rounded rect background
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(px - bgW / 2 + r, py - bgH / 2);
+          ctx.lineTo(px + bgW / 2 - r, py - bgH / 2);
+          ctx.quadraticCurveTo(px + bgW / 2, py - bgH / 2, px + bgW / 2, py - bgH / 2 + r);
+          ctx.lineTo(px + bgW / 2, py + bgH / 2 - r);
+          ctx.quadraticCurveTo(px + bgW / 2, py + bgH / 2, px + bgW / 2 - r, py + bgH / 2);
+          ctx.lineTo(px - bgW / 2 + r, py + bgH / 2);
+          ctx.quadraticCurveTo(px - bgW / 2, py + bgH / 2, px - bgW / 2, py + bgH / 2 - r);
+          ctx.lineTo(px - bgW / 2, py - bgH / 2 + r);
+          ctx.quadraticCurveTo(px - bgW / 2, py - bgH / 2, px - bgW / 2 + r, py - bgH / 2);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = "#ffffff";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, px, py);
+        } catch { /* skip */ }
+      });
+
+      // Restore styles
       polygonsRef.current.forEach((p, i) => {
         const color = getColor(i);
         p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
@@ -775,12 +806,25 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 1, fillOpacity: 0.55, color: "#9b59b6", fillColor: "#d7bde2" }));
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 1, fillOpacity: 0.04 });
 
-      // Restore original map view
+      // Crop canvas to print area bounds if set (no map move needed)
       if (printBoundsRef.current) {
-        map.setView(savedCenter, savedZoom, { animate: false });
+        const [[south, west], [north, east]] = printBoundsRef.current;
+        const nw = map.latLngToContainerPoint([north, west]);
+        const se = map.latLngToContainerPoint([south, east]);
+        const cx = Math.round(Math.max(0, nw.x) * SCALE);
+        const cy = Math.round(Math.max(0, nw.y) * SCALE);
+        const cw = Math.round(Math.min(canvas.width, se.x * SCALE)) - cx;
+        const ch = Math.round(Math.min(canvas.height, se.y * SCALE)) - cy;
+        if (cw > 20 && ch > 20) {
+          const cropped = document.createElement("canvas");
+          cropped.width = cw;
+          cropped.height = ch;
+          cropped.getContext("2d")!.drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
+          return cropped.toDataURL("image/png");
+        }
       }
 
-      return dataUrl;
+      return canvas.toDataURL("image/png");
     },
   }), []);
 
