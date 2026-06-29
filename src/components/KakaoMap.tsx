@@ -231,7 +231,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     const allExclusionCoords = exclusionPolygonsRef.current.map((p) => p.coords);
     const counts: number[] = [];
 
-    polygonsRef.current.forEach((polygonData) => {
+    polygonsRef.current.forEach((polygonData, zoneIndex) => {
+      const zoneColor = getColor(zoneIndex);
+
       const relevantExcls = allExclusionCoords.filter((exc) => {
         const excCentroid: Coord = {
           lat: exc.reduce((s, c) => s + c.lat, 0) / exc.length,
@@ -243,17 +245,31 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const modules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls);
       counts.push(modules.length);
 
+      // 구역별 색상으로 모듈 렌더링, 동시에 모듈 NW 코너 추적
+      let modNwLat = -Infinity;
+      let modNwLng = Infinity;
+
       modules.forEach((corners) => {
         const latLngs = corners.map((c) => [c.lat, c.lng] as [number, number]);
         const poly = L.polygon(latLngs, {
-          color: "#7f1d1d",
-          weight: 1.0,
-          fillColor: "#ef4444",
-          fillOpacity: 0.72,
+          color: zoneColor,
+          weight: 0.8,
+          fillColor: zoneColor,
+          fillOpacity: 0.75,
           renderer: moduleRendererRef.current,
         }).addTo(map);
         moduleLayersRef.current.push(poly);
+
+        corners.forEach(c => {
+          if (c.lat > modNwLat) modNwLat = c.lat;
+          if (c.lng < modNwLng) modNwLng = c.lng;
+        });
       });
+
+      // 라벨을 모듈 배치 좌상단으로 이동
+      if (modules.length > 0 && isFinite(modNwLat)) {
+        polygonData.labelMarker.setLatLng([modNwLat, modNwLng]);
+      }
     });
 
     onModuleCountsChangeRef.current(counts);
@@ -266,6 +282,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       } else {
         const color = getColor(i);
         p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        // 모듈 없으면 라벨 위치를 폴리곤 NW 코너로 복원
+        const nwLat = Math.max(...p.coords.map(c => c.lat));
+        const nwLng = Math.min(...p.coords.map(c => c.lng));
+        p.labelMarker.setLatLng([nwLat, nwLng]);
       }
     });
   }, []);
@@ -521,10 +541,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         ];
         const polygon = L.polygon(capturedVertices, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
         const labelIcon = L.divIcon({
-          html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
+          html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:-1px -1px 0 rgba(0,0,0,0.7),1px -1px 0 rgba(0,0,0,0.7),-1px 1px 0 rgba(0,0,0,0.7),1px 1px 0 rgba(0,0,0,0.7);">${shortLabel}</div>`,
           className: "",
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
+          iconSize: [22, 22],
+          iconAnchor: [0, 0],
         });
         const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
         polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords), label }];
@@ -630,7 +650,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             ];
             const polygon = L.polygon(corners, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
             const labelIcon = L.divIcon({
-              html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
+              html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:-1px -1px 0 rgba(0,0,0,0.7),1px -1px 0 rgba(0,0,0,0.7),-1px 1px 0 rgba(0,0,0,0.7),1px 1px 0 rgba(0,0,0,0.7);">${shortLabel}</div>`,
               className: "",
               iconSize: [28, 28],
               iconAnchor: [14, 14],
@@ -774,32 +794,23 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       const ctx = canvas.getContext("2d")!;
 
-      // Draw zone labels on map image (div markers are not captured by html2canvas)
-      const RADIUS = 18 * SCALE;
+      // Draw zone labels on map image (div markers not captured by html2canvas)
       polygonsRef.current.forEach((polyData, i) => {
         try {
-          const nwLat = Math.max(...polyData.coords.map(c => c.lat));
-          const nwLng = Math.min(...polyData.coords.map(c => c.lng));
-          const pt = map.latLngToContainerPoint({ lat: nwLat, lng: nwLng });
+          const markerLatLng = polyData.labelMarker.getLatLng();
+          const pt = map.latLngToContainerPoint(markerLatLng);
           const shortLabel = polyData.label.replace("구역", "").trim();
-          // offset slightly inside the polygon
-          const px = pt.x * SCALE + RADIUS + 4 * SCALE;
-          const py = pt.y * SCALE + RADIUS + 4 * SCALE;
+          const px = pt.x * SCALE + 2 * SCALE;
+          const py = pt.y * SCALE + 2 * SCALE;
           const color = getColor(i);
 
-          // Draw circle badge
+          ctx.font = `bold ${22 * SCALE}px "Malgun Gothic", Arial, sans-serif`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          ctx.strokeStyle = "rgba(0,0,0,0.65)";
+          ctx.lineWidth = 3 * SCALE;
+          ctx.strokeText(shortLabel, px, py);
           ctx.fillStyle = color;
-          ctx.shadowColor = "rgba(0,0,0,0.4)";
-          ctx.shadowBlur = 6 * SCALE;
-          ctx.beginPath();
-          ctx.arc(px, py, RADIUS, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-
-          ctx.fillStyle = "#ffffff";
-          ctx.font = `bold ${20 * SCALE}px "Malgun Gothic", Arial, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
           ctx.fillText(shortLabel, px, py);
         } catch { /* skip */ }
       });
