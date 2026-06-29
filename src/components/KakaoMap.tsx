@@ -215,10 +215,20 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
     if (!config?.enabled || !map || !L) {
       onModuleCountsChangeRef.current([]);
-      // 모듈 숨김 시 구역 테두리/음영 복원
+      // 모듈 숨김 시 구역 테두리/음영 + 라벨 복원
       polygonsRef.current.forEach((p, i) => {
         const color = getColor(i);
         p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        if (L) {
+          const sl = p.label.replace("구역", "").trim();
+          p.labelMarker.setIcon(L.divIcon({
+            html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8);">${sl}</div>`,
+            className: "", iconAnchor: [0, 0],
+          }));
+          const nwLat = Math.max(...p.coords.map(c => c.lat));
+          const nwLng = Math.min(...p.coords.map(c => c.lng));
+          p.labelMarker.setLatLng([nwLat, nwLng]);
+        }
       });
       return;
     }
@@ -266,8 +276,18 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         });
       });
 
-      // 라벨을 모듈 배치 좌상단으로 이동
+      // 라벨을 모듈 배치 좌상단으로 이동 + 용량 표기
       if (modules.length > 0 && isFinite(modNwLat)) {
+        const shortLabel = polygonData.label.replace("구역", "").trim();
+        const capacityKw = (modules.length * config.moduleWattage) / 1000;
+        const capacityText = capacityKw >= 1000
+          ? (capacityKw / 1000).toFixed(2) + "MW"
+          : Math.round(capacityKw) + "kW";
+        const ts = "-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8)";
+        polygonData.labelMarker.setIcon(L.divIcon({
+          html: `<div style="pointer-events:none;line-height:1.15;"><div style="color:${zoneColor};font-size:18px;font-weight:900;text-shadow:${ts};">${shortLabel}</div><div style="color:${zoneColor};font-size:10px;font-weight:800;text-shadow:${ts};">${capacityText}</div></div>`,
+          className: "", iconAnchor: [0, 0],
+        }));
         polygonData.labelMarker.setLatLng([modNwLat, modNwLng]);
       }
     });
@@ -862,11 +882,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       if (!L) return;
       const color = getColor(index);
       const shortLabel = label.replace("구역", "").trim();
+      const ts = "-1px -1px 0 rgba(0,0,0,0.8),1px -1px 0 rgba(0,0,0,0.8),-1px 1px 0 rgba(0,0,0,0.8),1px 1px 0 rgba(0,0,0,0.8)";
       const labelIcon = L.divIcon({
-        html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
+        html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:${ts};">${shortLabel}</div>`,
         className: "",
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
+        iconAnchor: [0, 0],
       });
       polyData.labelMarker.setIcon(labelIcon);
     },
