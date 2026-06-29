@@ -106,13 +106,11 @@ export function calculateModuleLayout(
 
   const result: Coord[][] = [];
 
-  // Center the grid so leftover space is split evenly on both sides
+  // Anchor grid to NW corner (minX, minY) so the whole block moves together when angle changes
   const numCols = Math.floor((maxX - minX + 1e-6) / colStep);
   const numRows = Math.floor((maxY - minY + 1e-6) / rowStep);
-  const offsetX = ((maxX - minX) - (numCols * colStep - config.colSpacing / 1000)) / 2;
-  const offsetY = ((maxY - minY) - (numRows * rowStep - config.rowSpacing / 1000)) / 2;
-  const startX = minX + offsetX;
-  const startY = minY + offsetY;
+  const startX = minX;
+  const startY = minY;
 
   const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
 

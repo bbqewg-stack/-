@@ -440,10 +440,9 @@ export default function ModuleLayoutPanel({
                         <div className="flex items-center gap-0.5 ml-1">
                           <input
                             type="number"
-                            defaultValue={polyAngle.toFixed(1)}
+                            value={polyAngle.toFixed(1)}
                             min={-90} max={90} step={0.5}
-                            onBlur={e => onZoneAngleChange(i, parseFloat(e.target.value) || 0)}
-                            onKeyDown={e => e.key === "Enter" && onZoneAngleChange(i, parseFloat((e.target as HTMLInputElement).value) || 0)}
+                            onChange={e => onZoneAngleChange(i, parseFloat(e.target.value) || 0)}
                             className="text-xs border rounded px-1 py-0 w-14 text-center outline-none focus:border-blue-400"
                           />
                           <span className="text-xs text-gray-400">°</span>
