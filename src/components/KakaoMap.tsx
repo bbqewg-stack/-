@@ -252,10 +252,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       modules.forEach((corners) => {
         const latLngs = corners.map((c) => [c.lat, c.lng] as [number, number]);
         const poly = L.polygon(latLngs, {
-          color: zoneColor,
+          color: "#7f1d1d",
           weight: 0.8,
-          fillColor: zoneColor,
-          fillOpacity: 0.75,
+          fillColor: "#ef4444",
+          fillOpacity: 0.72,
           renderer: moduleRendererRef.current,
         }).addTo(map);
         moduleLayersRef.current.push(poly);
