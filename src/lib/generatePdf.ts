@@ -38,100 +38,113 @@ function northArrowSvg(): string {
 function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   // A3 landscape at 4px/mm = 1680 × 1188 px
   const PW = 1680, PH = 1188;
-  const PAD = 32;      // outer border inset
-  const INNER = 52;    // inner border / content start
-  const RIGHT_W = 560; // right info panel width
-  const TITLE_H = 100; // bottom title bar height
-  const GAP = 16;      // gap between map and right panel
+  const MARGIN = 20;
+  const HDR_H = 64;          // top header bar
+  const RIGHT_W = 488;       // right panel width
+  const DIV_W = 1;           // divider
+  const TITLE_BLOCK_H = 168; // title block at bottom of right panel
 
-  const mapW = PW - INNER - RIGHT_W - GAP - PAD;
-  const mapH = PH - INNER - TITLE_H - PAD;
-  const rpX = INNER + mapW + GAP;
-  const rpW = RIGHT_W;
-  const rpH = mapH;
+  const mapLeft = MARGIN;
+  const mapTop = MARGIN + HDR_H + 8;
+  const mapW = PW - RIGHT_W - DIV_W - MARGIN * 2 - 6;
+  const mapH = PH - mapTop - MARGIN;
 
-  // 발전용량 table rows
+  const rpLeft = PW - RIGHT_W - MARGIN;
+  const rpTop = mapTop;
+  const rpH = PH - rpTop - MARGIN;
+  const infoH = rpH - TITLE_BLOCK_H - 8;
+
   const zones = data.zones;
-  const tableRows = [
-    ["총 발전용량", formatKw(data.totalCapacityKw)],
-    ["모 듈 규 격", `${data.moduleWidth}×${data.moduleHeight}㎜ / ${data.moduleWattage}W`],
-    ["모 듈 총 수 량", `${data.totalModules.toLocaleString("ko")} 장`],
-    ["모 듈 구 성", zones.length ? zones.map(z => `${z.label}: ${z.moduleCount}장`).join(", ") : "-"],
-    ["모 듈 각 도", zones.length ? zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(", ") : "-"],
-    ["인 버 터 구 성", ""],
+
+  // ── Color palette ──
+  const NAVY = "#1c2f4f";
+  const NAVY2 = "#243c61";
+  const ACCENT = "#1e5fa8";
+  const STRIPE = "#f4f6f9";
+  const BORDER = "#d0d7e3";
+  const TEXT = "#1a1e2e";
+  const MUTED = "#6b7a99";
+
+  // ── Capacity table ──
+  const capRows = [
+    ["총 발전용량",  `<b style="font-size:15px;color:${ACCENT}">${formatKw(data.totalCapacityKw)}</b>`],
+    ["모듈 규격",    `${data.moduleWidth}×${data.moduleHeight} ㎜ / ${data.moduleWattage}W`],
+    ["모듈 총 수량", `${data.totalModules.toLocaleString("ko")} 장`],
+    ["모듈 구성",    zones.map(z => `${z.label}: ${z.moduleCount.toLocaleString("ko")}장`).join(" &nbsp;|&nbsp; ") || "-"],
+    ["모듈 각도",    zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(" &nbsp;|&nbsp; ") || "-"],
+    ["인버터 구성",  "&nbsp;"],
   ];
+  const capRowH = Math.floor((infoH * 0.50 - 36) / capRows.length);
+  const LW = 128;
 
-  const HDR_H = 30;
-  const ROW_H = Math.floor((rpH * 0.52 - HDR_H) / tableRows.length);
-  const LW = Math.floor(rpW * 0.36); // label column width
-
-  const tableRowsHtml = tableRows.map(([lbl, val]) => `
-    <div style="display:flex;height:${ROW_H}px;border-bottom:1px solid #aaa;">
-      <div style="width:${LW}px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
-                  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;letter-spacing:0.5px;text-align:center;padding:0 4px;">
+  const capRowsHtml = capRows.map(([lbl, val], idx) => `
+    <div style="display:flex;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};">
+      <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
+                  display:flex;align-items:center;padding:0 10px;
+                  font-size:11.5px;font-weight:600;color:${MUTED};letter-spacing:0.3px;">
         ${lbl}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;word-break:break-all;line-height:1.4;">
+      <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:12.5px;color:${TEXT};line-height:1.4;word-break:break-all;">
         ${val}
       </div>
     </div>`).join("");
 
-  // 건축개요
-  const archH = 52;
-  const archHtml = `
-    <div style="border:1px solid #aaa;border-top:none;height:${archH}px;display:flex;">
-      <div style="width:${LW}px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
-                  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;letter-spacing:2px;">
-        위 치
+  // ── Zone cards ──
+  const zoneCardH = Math.floor((infoH * 0.50 - 44) / Math.max(zones.length, 1));
+  const zoneCardsHtml = zones.map(z => `
+    <div style="display:flex;align-items:center;height:${zoneCardH}px;border-bottom:1px solid ${BORDER};">
+      <div style="width:4px;flex-shrink:0;align-self:stretch;background:${z.color};"></div>
+      <div style="width:72px;flex-shrink:0;padding:0 10px;font-size:13px;font-weight:700;color:${TEXT};">${z.label}</div>
+      <div style="flex:1;display:flex;align-items:center;gap:16px;padding:0 8px;font-size:11.5px;color:${MUTED};">
+        <span><b style="color:${TEXT}">${z.moduleCount.toLocaleString("ko")}</b> 장</span>
+        <span><b style="color:${ACCENT}">${formatKw(z.capacityKw)}</b></span>
+        <span>각도 <b style="color:${TEXT}">${z.angle.toFixed(1)}°</b></span>
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:12px;line-height:1.5;word-break:break-all;">
-        ${data.location || ""}
+    </div>`).join("");
+
+  // ── Location row ──
+  const locHtml = `
+    <div style="display:flex;min-height:34px;border-bottom:1px solid ${BORDER};background:${STRIPE};">
+      <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
+                  display:flex;align-items:center;padding:0 10px;font-size:11.5px;font-weight:600;color:${MUTED};">
+        설치 위치
+      </div>
+      <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:12px;color:${TEXT};">
+        ${data.location || "&nbsp;"}
       </div>
     </div>`;
 
-  // Zone cards (if multiple zones)
-  const zoneCardsHtml = zones.length > 1 ? `
-    <div style="margin-top:14px;">
-      ${zones.map(z => `
-        <div style="display:flex;align-items:center;border:1px solid #ddd;border-radius:4px;margin-bottom:6px;overflow:hidden;">
-          <div style="width:10px;flex-shrink:0;background:${z.color};self-stretch;"></div>
-          <div style="flex:1;padding:5px 10px;">
-            <div style="font-size:13px;font-weight:700;color:#333;">${z.label}</div>
-            <div style="font-size:11px;color:#666;">${z.moduleCount}장 · ${formatKw(z.capacityKw)} · ${z.angle.toFixed(1)}°</div>
-          </div>
-        </div>`).join("")}
-    </div>` : "";
-
-  // Zone legend overlay (on map)
-  const legendHtml = zones.map(z => `
-    <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.88);
-                padding:3px 8px;border-radius:3px;margin-bottom:4px;font-size:13px;font-weight:600;border:1px solid rgba(0,0,0,0.12);">
-      <div style="width:14px;height:14px;background:${z.color};border-radius:2px;flex-shrink:0;"></div>
-      ${z.label}: ${formatKw(z.capacityKw)} (${z.moduleCount}장)
-    </div>`).join("");
-
-  // Bottom meta rows
-  const logoHtml = logoDataUrl
-    ? `<img src="${logoDataUrl}" style="max-height:${TITLE_H - 14}px;max-width:180px;object-fit:contain;" />`
-    : `<div style="font-size:20px;font-weight:900;color:#1a3a8c;font-family:Arial,sans-serif;">TNE</div>`;
-
+  // ── Title block ──
   const metaItems = [
     ["PROJECT", data.projectName || "태양광 발전소"],
-    ["TITLE", "MODULE ARRAY"],
-    ["SCALE", "S=1:100"],
+    ["TITLE",   "MODULE ARRAY"],
+    ["SCALE",   "S=1:100"],
     ["DWG No.", "6-01"],
-    ["DATE", new Date().toISOString().slice(0, 7).replace("-", ".")],
+    ["DATE",    new Date().toISOString().slice(0, 7).replace("-", ".")],
   ];
-  const metaRowH = Math.floor(TITLE_H / metaItems.length);
+  const metaRowH = Math.floor((TITLE_BLOCK_H - 56) / metaItems.length);
   const metaHtml = metaItems.map(([k, v]) => `
-    <div style="display:flex;height:${metaRowH}px;border-bottom:1px solid #aaa;box-sizing:border-box;">
-      <div style="width:76px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
-                  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">
+    <div style="display:flex;height:${metaRowH}px;">
+      <div style="width:76px;flex-shrink:0;border-right:1px solid ${BORDER};
+                  display:flex;align-items:center;padding:0 8px;
+                  font-size:10px;font-weight:700;color:${MUTED};letter-spacing:0.5px;background:${STRIPE};">
         ${k}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding-left:8px;font-size:11px;">
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:10.5px;color:${TEXT};">
         ${v}
       </div>
+    </div>`).join("");
+
+  const logoHtml = logoDataUrl
+    ? `<img src="${logoDataUrl}" style="max-height:40px;max-width:130px;object-fit:contain;" />`
+    : `<div style="font-size:18px;font-weight:900;color:${ACCENT};font-family:Arial,sans-serif;letter-spacing:2px;">TNE</div>`;
+
+  // ── Map legend ──
+  const legendHtml = zones.map(z => `
+    <div style="display:flex;align-items:center;gap:7px;padding:4px 10px;font-size:12px;font-weight:600;
+                background:rgba(255,255,255,0.92);border-radius:2px;margin-bottom:3px;color:#111;
+                border-left:4px solid ${z.color};box-shadow:0 1px 3px rgba(0,0,0,0.15);">
+      ${z.label}: ${formatKw(z.capacityKw)} (${z.moduleCount.toLocaleString("ko")}장)
     </div>`).join("");
 
   return `<!DOCTYPE html>
@@ -144,66 +157,104 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 </style>
 </head>
 <body>
-<div id="drawing" style="width:${PW}px;height:${PH}px;background:#fff;position:relative;overflow:hidden;">
+<div id="drawing" style="width:${PW}px;height:${PH}px;background:#f0f2f5;position:relative;overflow:hidden;">
 
-  <!-- Outer border -->
-  <div style="position:absolute;inset:${PAD}px;border:2px solid #222;pointer-events:none;z-index:1;"></div>
-  <!-- Inner border -->
-  <div style="position:absolute;inset:${INNER - 10}px;border:0.8px solid #666;pointer-events:none;z-index:1;"></div>
+  <!-- ── OUTER FRAME ── -->
+  <div style="position:absolute;inset:${MARGIN}px;background:#fff;border:1.5px solid ${BORDER};box-shadow:0 2px 12px rgba(0,0,0,0.08);"></div>
+
+  <!-- ── TOP HEADER BAR ── -->
+  <div style="position:absolute;left:${MARGIN}px;top:${MARGIN}px;width:${PW - MARGIN * 2}px;height:${HDR_H}px;
+              background:linear-gradient(135deg,${NAVY} 0%,${NAVY2} 100%);
+              display:flex;align-items:center;padding:0 24px;gap:20px;">
+    <!-- Logo -->
+    <div style="flex-shrink:0;height:44px;display:flex;align-items:center;">${logoHtml}</div>
+    <!-- Vertical divider -->
+    <div style="width:1px;height:36px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
+    <!-- Title -->
+    <div style="flex:1;">
+      <div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.55);letter-spacing:2px;margin-bottom:3px;">SOLAR PV DESIGN</div>
+      <div style="font-size:17px;font-weight:700;color:#fff;letter-spacing:3px;font-family:Arial,sans-serif;">MODULE  ARRAY</div>
+    </div>
+    <!-- Capacity badge -->
+    <div style="flex-shrink:0;text-align:right;">
+      <div style="font-size:9px;color:rgba(255,255,255,0.55);letter-spacing:1px;margin-bottom:2px;">총 발전용량</div>
+      <div style="font-size:22px;font-weight:900;color:#7dd3fc;font-family:Arial,sans-serif;letter-spacing:1px;">${formatKw(data.totalCapacityKw)}</div>
+    </div>
+  </div>
 
   <!-- ── MAP AREA ── -->
-  <div style="position:absolute;left:${INNER}px;top:${INNER}px;width:${mapW}px;height:${mapH}px;overflow:hidden;border:1px solid #bbb;">
+  <div style="position:absolute;left:${mapLeft}px;top:${mapTop}px;width:${mapW}px;height:${mapH}px;overflow:hidden;">
     ${data.mapImageDataUrl
       ? `<img src="${data.mapImageDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
-      : `<div style="width:100%;height:100%;background:#e8e8e8;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:18px;">지도 이미지</div>`
+      : `<div style="width:100%;height:100%;background:#e8edf2;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:18px;">지도 이미지</div>`
     }
     <!-- North arrow -->
-    <div style="position:absolute;top:10px;left:10px;z-index:5;">${northArrowSvg()}</div>
+    <div style="position:absolute;top:12px;left:12px;z-index:5;background:rgba(255,255,255,0.9);border-radius:50%;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);">${northArrowSvg()}</div>
     <!-- Zone legend -->
-    <div style="position:absolute;bottom:12px;left:12px;z-index:5;">${legendHtml}</div>
+    <div style="position:absolute;bottom:14px;left:14px;z-index:5;">${legendHtml}</div>
   </div>
+
+  <!-- ── VERTICAL DIVIDER ── -->
+  <div style="position:absolute;left:${rpLeft - 8}px;top:${mapTop}px;width:1px;height:${mapH}px;background:${BORDER};"></div>
 
   <!-- ── RIGHT PANEL ── -->
-  <div style="position:absolute;left:${rpX}px;top:${INNER}px;width:${rpW}px;height:${rpH}px;overflow:hidden;">
+  <div style="position:absolute;left:${rpLeft}px;top:${rpTop}px;width:${RIGHT_W}px;height:${rpH}px;overflow:hidden;display:flex;flex-direction:column;">
 
-    <!-- 발전용량 header -->
-    <div style="background:#1c1c1c;color:#fff;padding:5px 10px;font-size:15px;font-weight:700;letter-spacing:1px;height:${HDR_H}px;display:flex;align-items:center;">
-      ■ 발 전 용 량
-    </div>
-    <!-- 발전용량 table -->
-    <div style="border:1px solid #aaa;border-top:none;">
-      ${tableRowsHtml}
+    <!-- 발전용량 섹션 -->
+    <div style="flex-shrink:0;">
+      <div style="background:${NAVY};color:#fff;padding:0 14px;height:32px;display:flex;align-items:center;gap:8px;">
+        <div style="width:3px;height:14px;background:#7dd3fc;border-radius:2px;"></div>
+        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;">발전용량</span>
+      </div>
+      <div style="border:1px solid ${BORDER};border-top:none;">
+        ${capRowsHtml}
+      </div>
     </div>
 
-    <!-- 건축개요 header -->
-    <div style="margin-top:12px;background:#1c1c1c;color:#fff;padding:5px 10px;font-size:15px;font-weight:700;letter-spacing:1px;height:${HDR_H}px;display:flex;align-items:center;">
-      ■ 건 축 개 요
-    </div>
-    ${archHtml}
+    <!-- 구역별 상세 섹션 -->
+    ${zones.length > 0 ? `
+    <div style="flex-shrink:0;margin-top:10px;">
+      <div style="background:${NAVY};color:#fff;padding:0 14px;height:32px;display:flex;align-items:center;gap:8px;">
+        <div style="width:3px;height:14px;background:#86efac;border-radius:2px;"></div>
+        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;">구역별 상세</span>
+      </div>
+      <div style="border:1px solid ${BORDER};border-top:none;">
+        ${zoneCardsHtml}
+      </div>
+    </div>` : ""}
 
-    ${zoneCardsHtml}
-  </div>
+    <!-- 설치위치 -->
+    <div style="flex-shrink:0;margin-top:10px;border:1px solid ${BORDER};">
+      ${locHtml}
+    </div>
 
-  <!-- ── BOTTOM TITLE BAR ── -->
-  <div style="
-    position:absolute;
-    left:${INNER - 10}px;bottom:${PAD}px;
-    width:${PW - INNER + 10 - PAD}px;height:${TITLE_H}px;
-    border:1.5px solid #555;
-    display:flex;overflow:hidden;background:#fff;
-  ">
-    <!-- Logo -->
-    <div style="width:190px;flex-shrink:0;border-right:1.5px solid #555;display:flex;align-items:center;justify-content:center;padding:6px;">
-      ${logoHtml}
+    <!-- Spacer -->
+    <div style="flex:1;"></div>
+
+    <!-- ── TITLE BLOCK ── -->
+    <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
+      <!-- Title block header -->
+      <div style="background:${NAVY};padding:0 14px;height:34px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:2px;font-family:Arial,sans-serif;">DRAWING INFO</div>
+        <div style="font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px;">태양광 자동 용량계산</div>
+      </div>
+      <!-- Divider with logo -->
+      <div style="height:48px;display:flex;align-items:center;border-bottom:1px solid ${BORDER};background:#fff;">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+          ${logoHtml}
+        </div>
+        <div style="width:1px;height:32px;background:${BORDER};"></div>
+        <div style="flex:2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
+          <div style="font-size:14px;font-weight:900;letter-spacing:4px;color:${NAVY};font-family:Arial,sans-serif;">MODULE ARRAY</div>
+          <div style="font-size:9px;color:${MUTED};letter-spacing:1px;">SOLAR PV INSTALLATION PLAN</div>
+        </div>
+      </div>
+      <!-- Meta rows -->
+      <div style="border-top:1px solid ${BORDER};">
+        ${metaHtml}
+      </div>
     </div>
-    <!-- MODULE ARRAY -->
-    <div style="flex:1;display:flex;align-items:center;justify-content:center;">
-      <span style="font-size:24px;font-weight:900;letter-spacing:5px;font-family:Arial,Helvetica,sans-serif;">MODULE  ARRAY</span>
-    </div>
-    <!-- META -->
-    <div style="width:${rpW}px;flex-shrink:0;border-left:1.5px solid #555;">
-      ${metaHtml}
-    </div>
+
   </div>
 
 </div>
