@@ -246,10 +246,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       modules.forEach((corners) => {
         const latLngs = corners.map((c) => [c.lat, c.lng] as [number, number]);
         const poly = L.polygon(latLngs, {
-          color: "#1e3a8a",
+          color: "#7f1d1d",
           weight: 1.0,
-          fillColor: "#3b82f6",
-          fillOpacity: 0.75,
+          fillColor: "#ef4444",
+          fillOpacity: 0.72,
           renderer: moduleRendererRef.current,
         }).addTo(map);
         moduleLayersRef.current.push(poly);
@@ -514,9 +514,19 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         const colorIndex = polygonsRef.current.length;
         const color = getColor(colorIndex);
         const label = String.fromCharCode(65 + colorIndex) + "구역";
+        const shortLabel = String.fromCharCode(65 + colorIndex);
+        const nwCorner: [number, number] = [
+          Math.max(...capturedVertices.map(v => v[0])),
+          Math.min(...capturedVertices.map(v => v[1])),
+        ];
         const polygon = L.polygon(capturedVertices, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
-        const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
-        const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
+        const labelIcon = L.divIcon({
+          html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
+          className: "",
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+        });
+        const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
         polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords), label }];
         setPolygonCount(polygonsRef.current.length);
       }
@@ -613,9 +623,19 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             const colorIndex = polygonsRef.current.length;
             const color = getColor(colorIndex);
             const label = String.fromCharCode(65 + colorIndex) + "구역";
+            const shortLabel = String.fromCharCode(65 + colorIndex);
+            const nwCorner: [number, number] = [
+              Math.max(...corners.map(v => v[0])),
+              Math.min(...corners.map(v => v[1])),
+            ];
             const polygon = L.polygon(corners, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
-            const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
-            const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
+            const labelIcon = L.divIcon({
+              html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
+              className: "",
+              iconSize: [28, 28],
+              iconAnchor: [14, 14],
+            });
+            const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
             polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2), label }];
             setPolygonCount(polygonsRef.current.length);
           }
@@ -755,43 +775,32 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const ctx = canvas.getContext("2d")!;
 
       // Draw zone labels on map image (div markers are not captured by html2canvas)
-      const FONT_SIZE = 22 * SCALE;
+      const RADIUS = 18 * SCALE;
       polygonsRef.current.forEach((polyData, i) => {
         try {
-          const centroid = {
-            lat: polyData.coords.reduce((s, c) => s + c.lat, 0) / polyData.coords.length,
-            lng: polyData.coords.reduce((s, c) => s + c.lng, 0) / polyData.coords.length,
-          };
-          const pt = map.latLngToContainerPoint(centroid);
-          const label = polyData.label;
-          const px = pt.x * SCALE;
-          const py = pt.y * SCALE;
+          const nwLat = Math.max(...polyData.coords.map(c => c.lat));
+          const nwLng = Math.min(...polyData.coords.map(c => c.lng));
+          const pt = map.latLngToContainerPoint({ lat: nwLat, lng: nwLng });
+          const shortLabel = polyData.label.replace("구역", "").trim();
+          // offset slightly inside the polygon
+          const px = pt.x * SCALE + RADIUS + 4 * SCALE;
+          const py = pt.y * SCALE + RADIUS + 4 * SCALE;
           const color = getColor(i);
 
-          ctx.font = `bold ${FONT_SIZE}px "Malgun Gothic", Arial, sans-serif`;
-          const tw = ctx.measureText(label).width;
-          const padX = 10 * SCALE, padY = 5 * SCALE;
-          const bgW = tw + padX * 2, bgH = FONT_SIZE + padY * 2;
-          const r = 8 * SCALE;
-
+          // Draw circle badge
           ctx.fillStyle = color;
+          ctx.shadowColor = "rgba(0,0,0,0.4)";
+          ctx.shadowBlur = 6 * SCALE;
           ctx.beginPath();
-          ctx.moveTo(px - bgW / 2 + r, py - bgH / 2);
-          ctx.lineTo(px + bgW / 2 - r, py - bgH / 2);
-          ctx.quadraticCurveTo(px + bgW / 2, py - bgH / 2, px + bgW / 2, py - bgH / 2 + r);
-          ctx.lineTo(px + bgW / 2, py + bgH / 2 - r);
-          ctx.quadraticCurveTo(px + bgW / 2, py + bgH / 2, px + bgW / 2 - r, py + bgH / 2);
-          ctx.lineTo(px - bgW / 2 + r, py + bgH / 2);
-          ctx.quadraticCurveTo(px - bgW / 2, py + bgH / 2, px - bgW / 2, py + bgH / 2 - r);
-          ctx.lineTo(px - bgW / 2, py - bgH / 2 + r);
-          ctx.quadraticCurveTo(px - bgW / 2, py - bgH / 2, px - bgW / 2 + r, py - bgH / 2);
-          ctx.closePath();
+          ctx.arc(px, py, RADIUS, 0, Math.PI * 2);
           ctx.fill();
+          ctx.shadowBlur = 0;
 
           ctx.fillStyle = "#ffffff";
+          ctx.font = `bold ${20 * SCALE}px "Malgun Gothic", Arial, sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(label, px, py);
+          ctx.fillText(shortLabel, px, py);
         } catch { /* skip */ }
       });
 
@@ -841,10 +850,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       const L = leafletRef.current;
       if (!L) return;
       const color = getColor(index);
+      const shortLabel = label.replace("구역", "").trim();
       const labelIcon = L.divIcon({
-        html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`,
+        html: `<div style="background:${color};color:#fff;font-size:14px;font-weight:800;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;box-shadow:0 2px 6px rgba(0,0,0,0.45);">${shortLabel}</div>`,
         className: "",
-        iconAnchor: [20, 10],
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
       });
       polyData.labelMarker.setIcon(labelIcon);
     },

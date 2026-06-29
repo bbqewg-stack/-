@@ -41,6 +41,14 @@ function getCentroid(coords: Coord[]): Coord {
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
 
+const MODULE_PRESETS = [
+  { label: "JINKO 660W",     wattage: 660, width: 1134, height: 2382 },
+  { label: "TRINA 730W",     wattage: 730, width: 1303, height: 2384 },
+  { label: "LONGI 660W",     wattage: 660, width: 1134, height: 2382 },
+  { label: "한화큐셀 640W",   wattage: 640, width: 1134, height: 2382 },
+  { label: "한화큐셀 730W",   wattage: 730, width: 1303, height: 2384 },
+];
+
 export default function ModuleLayoutPanel({
   polygons,
   moduleConfig,
@@ -187,6 +195,26 @@ export default function ModuleLayoutPanel({
       <div className="bg-white border rounded-lg p-4">
         <p className="text-xs font-semibold text-gray-600 mb-3">모듈 규격</p>
         <div className="space-y-2.5">
+          {/* 메이커 프리셋 */}
+          <LabelRow label="메이커">
+            <select
+              value={MODULE_PRESETS.find(p =>
+                p.width === moduleConfig.moduleWidth &&
+                p.height === moduleConfig.moduleHeight &&
+                p.wattage === moduleConfig.moduleWattage
+              )?.label ?? ""}
+              onChange={e => {
+                const preset = MODULE_PRESETS.find(p => p.label === e.target.value);
+                if (preset) set({ moduleWidth: preset.width, moduleHeight: preset.height, moduleWattage: preset.wattage });
+              }}
+              className="text-xs border rounded px-1.5 py-0.5 outline-none focus:border-blue-400 bg-white w-32"
+            >
+              <option value="">직접 입력</option>
+              {MODULE_PRESETS.map(p => (
+                <option key={p.label} value={p.label}>{p.label}</option>
+              ))}
+            </select>
+          </LabelRow>
           <LabelRow label="크기 (W×H)">
             <div className="flex items-center gap-1">
               <NumInput value={moduleConfig.moduleWidth} min={500} max={3000}
