@@ -16,13 +16,13 @@ interface PolygonData {
   labelMarker: any;
   area: number;
   coords: Coord[];
+  angle: number;
 }
 
 interface KakaoMapProps {
-  onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[]) => void;
+  onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]) => void;
   moduleConfig?: ModuleConfig;
   onModuleCountsChange?: (counts: number[]) => void;
-  onAutoAngle?: (angle: number) => void;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -125,7 +125,6 @@ export default function LeafletMap({
   onAreasChange,
   moduleConfig,
   onModuleCountsChange = () => {},
-  onAutoAngle,
 }: KakaoMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,11 +182,9 @@ export default function LeafletMap({
   const moduleLayersRef = useRef<any[]>([]);
   const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
-  const onAutoAngleRef = useRef(onAutoAngle);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
-  useEffect(() => { onAutoAngleRef.current = onAutoAngle; }, [onAutoAngle]);
 
   const renderModules = useCallback(() => {
     const config = moduleConfigRef.current;
@@ -214,7 +211,7 @@ export default function LeafletMap({
         return isCoordInPolygon(excCentroid, polygonData.coords);
       });
 
-      const modules = calculateModuleLayout(polygonData.coords, config, relevantExcls);
+      const modules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls);
       counts.push(modules.length);
 
       modules.forEach((corners) => {
@@ -355,7 +352,7 @@ export default function LeafletMap({
   }, []);
 
   const notifyAreas = useCallback(() => {
-    const inclusions = polygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'inclusion' as const }));
+    const inclusions = polygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'inclusion' as const, angle: p.angle }));
     const exclusions = exclusionPolygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'exclusion' as const }));
     onAreasChange([...inclusions, ...exclusions]);
     renderModules();
@@ -413,7 +410,7 @@ export default function LeafletMap({
         const polygon = L.polygon(capturedVertices, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
         const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
         const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-        exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords }];
+        exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0 }];
         setExclusionCount(exclusionPolygonsRef.current.length);
       } else {
         const colorIndex = polygonsRef.current.length;
@@ -422,10 +419,8 @@ export default function LeafletMap({
         const polygon = L.polygon(capturedVertices, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
         const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">영역 ${label}</div>`, className: "", iconAnchor: [20, 10] });
         const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-        polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords }];
+        polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords) }];
         setPolygonCount(polygonsRef.current.length);
-        // Auto-detect angle from longest edge
-        onAutoAngleRef.current?.(detectPolygonAngle(coords));
       }
       notifyAreas();
     });
@@ -514,7 +509,7 @@ export default function LeafletMap({
             const polygon = L.polygon(corners, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
             const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
             const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-            exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords }];
+            exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0 }];
             setExclusionCount(exclusionPolygonsRef.current.length);
           } else {
             const colorIndex = polygonsRef.current.length;
@@ -523,10 +518,8 @@ export default function LeafletMap({
             const polygon = L.polygon(corners, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
             const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">영역 ${label}</div>`, className: "", iconAnchor: [20, 10] });
             const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-            polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords }];
+            polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2) }];
             setPolygonCount(polygonsRef.current.length);
-            // Auto-angle from P1→P2 edge direction
-            onAutoAngleRef.current?.(edgeAngle(p1, p2));
           }
           notifyAreas();
         }

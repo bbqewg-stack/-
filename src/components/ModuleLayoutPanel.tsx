@@ -9,7 +9,7 @@ interface Coord {
 }
 
 interface ModuleLayoutPanelProps {
-  polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[];
+  polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[];
   moduleConfig: ModuleConfig;
   onModuleConfigChange: (config: ModuleConfig) => void;
   moduleCounts: number[];
@@ -112,21 +112,6 @@ export default function ModuleLayoutPanel({
               <span className="text-xs text-gray-400">mm</span>
             </div>
           </LabelRow>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-500">배치 각도</span>
-              <span className="text-xs font-mono text-gray-700">{moduleConfig.angle}°</span>
-            </div>
-            <input
-              type="range" min={-90} max={90} step={1}
-              value={moduleConfig.angle}
-              onChange={(e) => set({ angle: +e.target.value })}
-              className="w-full accent-purple-500"
-            />
-            <div className="flex justify-between text-xs text-gray-300 mt-0.5">
-              <span>-90°</span><span>0°</span><span>90°</span>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -211,11 +196,15 @@ export default function ModuleLayoutPanel({
                 const cnt = moduleCounts[i] ?? 0;
                 const kw = (cnt * moduleConfig.moduleWattage) / 1000;
                 const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+                const polyAngle = inclusions[i]?.angle;
                 return (
                   <div key={i} className="bg-white rounded p-2 border">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full" />
                       <span className="text-xs font-medium text-gray-600">영역 {i + 1}</span>
+                      {polyAngle !== undefined && (
+                        <span className="text-xs text-gray-400 ml-1">{polyAngle.toFixed(1)}°</span>
+                      )}
                       <span className="text-xs text-purple-600 ml-auto font-semibold">{cnt.toLocaleString("ko")} 개</span>
                     </div>
                     <div className="flex justify-between">

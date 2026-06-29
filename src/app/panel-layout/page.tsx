@@ -12,7 +12,7 @@ interface Coord {
 }
 
 export default function LayoutPage() {
-  const [polygons, setPolygons] = useState<{ area: number; coords: Coord[]; type: 'inclusion' | 'exclusion' }[]>([]);
+  const [polygons, setPolygons] = useState<{ area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]>([]);
   const [moduleConfig, setModuleConfig] = useState<ModuleConfig>({
     ...DEFAULT_MODULE_CONFIG,
     enabled: true,
@@ -64,9 +64,6 @@ export default function LayoutPage() {
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
-              onAutoAngle={(angle) =>
-                setModuleConfig(c => ({ ...c, angle }))
-              }
             />
           </div>
         </div>
