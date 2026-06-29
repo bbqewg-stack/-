@@ -119,7 +119,8 @@ export function calculateModuleLayout(
   for (let col = 0; col < numCols; col++) {
     const x = startX + col * colStep;
     let placedInCol = 0;
-    for (let row = 0; row < numRows; row++) {
+    // Iterate north→south (numRows-1 = maxY side = north) so modules fill from north first
+    for (let row = numRows - 1; row >= 0; row--) {
       if (placedInCol >= maxPerCol) break;
       const y = startY + row * rowStep;
       const corners = [
