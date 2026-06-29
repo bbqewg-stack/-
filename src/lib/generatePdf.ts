@@ -46,7 +46,11 @@ function northArrowSvg(): string {
 </svg>`;
 }
 
-/** 큰 용량 우선: 50kW 단수는 패널티 부여 → 125kW 최대 활용 */
+/**
+ * 인버터 조합 계산: 125kW > 60kW > 50kW 순 우선
+ * score = excess*3 + n60*30 + n50*20 - n125*50
+ * → 125kW 대수가 많을수록 score 감소(유리), excess도 최소화
+ */
 function calcInverters(totalKw: number): string {
   if (totalKw <= 0) return "-";
 
@@ -63,8 +67,8 @@ function calcInverters(totalKw: number): string {
       const total = n125 * 125 + n60 * 60 + n50 * 50;
       const excess = total - totalKw;
       if (excess < 0) continue;
-      // 큰 용량 우선: 50kW 단수 패널티, 초과량은 적게 가중
-      const score = excess * 5 + n50 * 80 + (n125 + n60 + n50);
+      // 125kW 많을수록 유리(-50/대), 초과량 최소화, 60/50은 패널티
+      const score = excess * 3 + n60 * 30 + n50 * 20 - n125 * 50;
       if (score < bestScore) {
         bestScore = score;
         best = { n125, n60, n50 };
@@ -139,22 +143,31 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
   const LW = 138;
-  // Compute per-row padding for reliable vertical centering in html2canvas (flex align-items:center unreliable in iframes)
-  const lblPad = Math.max(6, Math.floor((capRowH - 22) / 2));
 
   const capRowsHtml = capRows.map(([lbl, val], idx) => {
     const isMultiLine = val.includes('<br/>');
     const isBigFont  = val.includes('font-size:22px');
-    const contentH   = isMultiLine ? 50 : isBigFont ? 32 : 22;
-    const valPad     = Math.max(4, Math.floor((capRowH - contentH) / 2));
+
+    // line-height trick: most reliable vertical centering for single-line in html2canvas
+    // multi-line / big-font use padding fallback
+    const lblStyle = `line-height:${capRowH}px;padding:0 10px;height:${capRowH}px;`;
+    let valStyle: string;
+    if (isMultiLine) {
+      const vp = Math.max(6, Math.floor((capRowH - 50) / 2));
+      valStyle = `padding:${vp}px 12px;line-height:1.55;height:${capRowH}px;box-sizing:border-box;`;
+    } else if (isBigFont) {
+      const vp = Math.max(6, Math.floor((capRowH - 34) / 2));
+      valStyle = `padding:${vp}px 12px;height:${capRowH}px;box-sizing:border-box;`;
+    } else {
+      valStyle = `line-height:${capRowH}px;padding:0 12px;height:${capRowH}px;`;
+    }
     return `
     <div style="display:flex;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
       <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  padding:${lblPad}px 10px;
-                  font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
+                  ${lblStyle}font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
         ${lbl}
       </div>
-      <div style="flex:1;padding:${valPad}px 12px;font-size:16px;font-weight:600;color:${TEXT};line-height:1.5;">
+      <div style="flex:1;${valStyle}font-size:16px;font-weight:600;color:${TEXT};">
         ${val}
       </div>
     </div>`;
@@ -221,9 +234,9 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
-      <div style="background:${NAVY};color:#fff;padding:8px 14px;height:34px;display:flex;gap:8px;">
-        <div style="width:3px;height:15px;background:#7dd3fc;border-radius:2px;flex-shrink:0;margin-top:1px;"></div>
-        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;line-height:1.1;">태양광발전소 사업개요</span>
+      <div style="background:${NAVY};color:#fff;height:34px;display:flex;align-items:center;padding:0 14px;gap:8px;">
+        <div style="width:3px;height:15px;background:#7dd3fc;border-radius:2px;flex-shrink:0;"></div>
+        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;line-height:34px;">태양광발전소 사업개요</span>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -244,25 +257,25 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
           <div style="font-size:10px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:3px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
-      <!-- Contact rows: padding 기반 수직 정렬 (Mobile 제거) -->
+      <!-- Contact rows: line-height 수직 정렬 (Mobile 제거) -->
       <div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
-          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</div>
-          <div style="width:48px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};padding:5px 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
-          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
+          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</div>
+          <div style="width:48px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};line-height:28px;padding:0 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
+          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</div>
         </div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
-          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
+          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</div>
         </div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
-          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
+          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</div>
         </div>
         <div style="display:flex;height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
-          <div style="flex:1;padding:5px 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
+          <div style="flex:1;line-height:28px;padding:0 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
         </div>
       </div>
     </div>

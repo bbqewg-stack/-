@@ -137,12 +137,11 @@ export function calculateModuleLayout(
   const baseMinX = minX, baseMaxX = minX + baseNumCols * colStep;
   const baseMinY = minY, baseMaxY = minY + baseNumRows * rowStep;
 
-  // maxPerCol applies only to polygon cells; extended cells are always placed freely
   const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
 
   for (let col = 0; col < numCols; col++) {
     const x = startX + col * colStep;
-    let polyPlacedInCol = 0; // counts only non-extended polygon cells
+    let placedInCol = 0; // counts polygon + X-extended cells (subject to maxPerCol)
     for (let row = numRows - 1; row >= 0; row--) {
       const y = startY + row * rowStep;
       const corners = [
@@ -150,20 +149,25 @@ export function calculateModuleLayout(
       ];
       const center = { x: x + mW / 2, y: y + mH / 2 };
 
-      // Extended cells (outside base polygon area) skip polygon boundary check and maxPerCol
-      const isExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6 ||
-                         y < baseMinY - 1e-6 || y + mH > baseMaxY + 1e-6;
-      if (isExtended) {
-        // Extended cell: bypass polygon check and maxPerCol, still honor exclusions
+      const isXExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6;
+      const isYExtended = y < baseMinY - 1e-6 || y + mH > baseMaxY + 1e-6;
+
+      if (isYExtended) {
+        // 상(top)/하(bottom) 확장 행: polygon 체크 생략, maxPerCol 무제한
+        // (X 확장 열의 상하 확장 모서리 포함)
         if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+      } else if (isXExtended) {
+        // 좌(left)/우(right) 확장 열 (polygon Y 범위 내): polygon 체크 생략, maxPerCol 적용
+        if (placedInCol >= maxPerCol) continue;
+        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+        placedInCol++;
       } else {
-        // Polygon cell: apply boundary check and maxPerCol; use continue (not break)
-        // so bottom-extended cells are still reachable after maxPerCol is hit
-        if (polyPlacedInCol >= maxPerCol) continue;
+        // 일반 polygon 셀: polygon 경계 + maxPerCol 모두 적용
+        if (placedInCol >= maxPerCol) continue;
         if (!corners.every((c) => inPoly2D(c, poly))) continue;
         if (!inPoly2D(center, poly)) continue;
         if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
-        polyPlacedInCol++;
+        placedInCol++;
       }
 
       result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
