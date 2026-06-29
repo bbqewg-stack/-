@@ -248,15 +248,15 @@ export default function LeafletMap({
     import("leaflet").then((L) => {
       if (!active || !mapRef.current || mapInstanceRef.current) return;
       leafletRef.current = L;
-      const map = L.map(mapRef.current, { center: [36.5, 127.8], zoom: 8 });
+      const map = L.map(mapRef.current, { center: [36.5, 127.8], zoom: 8, maxZoom: 22 });
       const vworldKey = process.env.NEXT_PUBLIC_VWORLD_KEY;
       L.tileLayer(
         `https://xdworld.vworld.kr/2d/Satellite/service/{z}/{x}/{y}.jpeg?apikey=${vworldKey}`,
-        { attribution: "© 국토정보플랫폼", maxZoom: 19, maxNativeZoom: 19 }
+        { attribution: "© 국토정보플랫폼", maxZoom: 22, maxNativeZoom: 19 }
       ).addTo(map);
       L.tileLayer(
         `https://xdworld.vworld.kr/2d/Hybrid/service/{z}/{x}/{y}.png?apikey=${vworldKey}`,
-        { maxZoom: 19, maxNativeZoom: 19, opacity: 0.9 }
+        { maxZoom: 22, maxNativeZoom: 19, opacity: 0.9 }
       ).addTo(map);
       mapInstanceRef.current = map;
     });
