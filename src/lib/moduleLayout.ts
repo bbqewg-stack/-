@@ -18,8 +18,8 @@ export const DEFAULT_MODULE_CONFIG: ModuleConfig = {
   moduleWidth: 1134,
   moduleHeight: 2094,
   moduleWattage: 550,
-  rowSpacing: 600,
-  colSpacing: 20,
+  rowSpacing: 10,
+  colSpacing: 10,
   angle: 0,
 };
 
