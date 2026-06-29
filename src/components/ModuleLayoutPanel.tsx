@@ -365,22 +365,30 @@ export default function ModuleLayoutPanel({
             <div className="mt-3 pt-3 border-t space-y-2">
               <p className="text-xs font-semibold text-gray-500">영역별 내역</p>
 
-              {/* 구역별 합계 요약 */}
+              {/* 구역별 합계 요약 - 같은 이름끼리 합산 */}
               <div className="bg-white rounded p-2 border space-y-1">
-                {inclusions.map((_, i) => {
-                  const cnt = moduleCounts[i] ?? 0;
-                  const kw = (cnt * moduleConfig.moduleWattage) / 1000;
-                  const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
-                  const lbl = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
-                  return (
-                    <div key={i} className="flex justify-between items-center">
+                {(() => {
+                  const grouped = new Map<string, { kw: number; color: string }>();
+                  inclusions.forEach((_, i) => {
+                    const cnt = moduleCounts[i] ?? 0;
+                    const kw = (cnt * moduleConfig.moduleWattage) / 1000;
+                    const lbl = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
+                    const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+                    if (!grouped.has(lbl)) {
+                      grouped.set(lbl, { kw, color });
+                    } else {
+                      grouped.get(lbl)!.kw += kw;
+                    }
+                  });
+                  return Array.from(grouped.entries()).map(([lbl, { kw, color }]) => (
+                    <div key={lbl} className="flex justify-between items-center">
                       <span className="text-xs font-bold" style={{ color }}>{lbl} 합계</span>
                       <span className="text-xs font-bold" style={{ color }}>
                         {kw >= 1000 ? (kw / 1000).toFixed(2) + " MW" : kw.toFixed(2) + " kW"}
                       </span>
                     </div>
-                  );
-                })}
+                  ));
+                })()}
               </div>
 
               {inclusions.map((_, i) => {
