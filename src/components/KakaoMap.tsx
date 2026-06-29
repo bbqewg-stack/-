@@ -181,6 +181,17 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapMouseMoveHandlerRef = useRef<any>(null);
 
+  // Print area refs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const printBoundsLayerRef = useRef<any>(null);
+  const printBoundsRef = useRef<[[number, number], [number, number]] | null>(null);
+  const [isPrintAreaMode, setIsPrintAreaMode] = useState(false);
+  const [printAreaPhase, setPrintAreaPhase] = useState(0); // 0=idle, 1=P1 set
+  const [printAreaSet, setPrintAreaSet] = useState(false);
+  const printP1Ref = useRef<[number, number] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const printClickHandlerRef = useRef<any>(null);
+
   // Module layout refs
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moduleLayersRef = useRef<any[]>([]);
@@ -353,6 +364,63 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     rectP1Ref.current = null;
     rectP2Ref.current = null;
     map.getContainer().style.cursor = "";
+  }, []);
+
+  const startPrintArea = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    cancelCurrentDrawing();
+    setIsPrintAreaMode(true);
+    printP1Ref.current = null;
+    map.getContainer().style.cursor = "crosshair";
+    import("leaflet").then((L) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const handler = (e: any) => {
+        const { lat, lng } = e.latlng;
+        if (!printP1Ref.current) {
+          printP1Ref.current = [lat, lng];
+          setPrintAreaPhase(1);
+          const m = L.circleMarker([lat, lng], { radius: 5, color: "#ef4444", fillColor: "#ef4444", fillOpacity: 1 }).addTo(map);
+          markersRef.current.push(m);
+        } else {
+          const p1 = printP1Ref.current;
+          const bounds: [[number, number], [number, number]] = [
+            [Math.min(p1[0], lat), Math.min(p1[1], lng)],
+            [Math.max(p1[0], lat), Math.max(p1[1], lng)],
+          ];
+          if (printBoundsLayerRef.current) { printBoundsLayerRef.current.remove(); }
+          printBoundsLayerRef.current = L.rectangle(bounds, {
+            color: "#ef4444", weight: 2, fillColor: "#ef4444", fillOpacity: 0.04, dashArray: "8,4",
+          }).addTo(map);
+          printBoundsRef.current = bounds;
+          map.off("click", handler);
+          printClickHandlerRef.current = null;
+          markersRef.current.forEach(m => m.remove());
+          markersRef.current = [];
+          map.getContainer().style.cursor = "";
+          setIsPrintAreaMode(false);
+          setPrintAreaSet(true);
+          setPrintAreaPhase(0);
+          printP1Ref.current = null;
+        }
+      };
+      map.on("click", handler);
+      printClickHandlerRef.current = handler;
+    });
+  }, [cancelCurrentDrawing]);
+
+  const clearPrintArea = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (printBoundsLayerRef.current) { printBoundsLayerRef.current.remove(); printBoundsLayerRef.current = null; }
+    printBoundsRef.current = null;
+    setPrintAreaSet(false);
+    setPrintAreaPhase(0);
+    if (printClickHandlerRef.current && map) { map.off("click", printClickHandlerRef.current); printClickHandlerRef.current = null; }
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+    if (map) map.getContainer().style.cursor = "";
+    setIsPrintAreaMode(false);
+    printP1Ref.current = null;
   }, []);
 
   const notifyAreas = useCallback(() => {
@@ -628,14 +696,25 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
   const isAnyDrawing = isDrawing || isRectDrawing;
 
-  // Expose captureMapImage: temporarily hide polygon fills/borders, capture, restore
   useImperativeHandle(ref, () => ({
     captureMapImage: async (): Promise<string> => {
       const html2canvas = (await import("html2canvas")).default;
+      const map = mapInstanceRef.current;
       const mapEl = mapRef.current;
-      if (!mapEl) return "";
+      if (!mapEl || !map) return "";
 
-      // Hide inclusion polygon fills for print (keep module panels visible)
+      // Save current view to restore later
+      const savedCenter = map.getCenter();
+      const savedZoom = map.getZoom();
+
+      // Fit to print bounds if set, then wait for tiles
+      if (printBoundsRef.current) {
+        if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
+        map.fitBounds(printBoundsRef.current, { animate: false, padding: [0, 0] });
+        await new Promise(r => setTimeout(r, 1200));
+      }
+
+      // Hide polygon fills/borders for clean map print
       polygonsRef.current.forEach(p => {
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
@@ -644,18 +723,46 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
       });
+      // Hide SVG module layers — will draw them manually on canvas
+      moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 0, fillOpacity: 0 }));
 
       await new Promise(r => setTimeout(r, 200));
 
+      const SCALE = 2;
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
         allowTaint: true,
-        scale: 2,
+        scale: SCALE,
         logging: false,
+        backgroundColor: "#f0f0f0",
       });
+
+      // Draw module polygons manually on canvas (bypasses SVG capture issues)
+      const ctx = canvas.getContext("2d")!;
+      moduleLayersRef.current.forEach(poly => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const lls: any = poly.getLatLngs();
+          // getLatLngs returns LatLng[][] for simple polygon
+          const ring: { lat: number; lng: number }[] = Array.isArray(lls[0]) ? lls[0] : lls;
+          if (ring.length < 3) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pts = ring.map((ll: any) => map.latLngToContainerPoint(ll));
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x * SCALE, pts[0].y * SCALE);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x * SCALE, pts[i].y * SCALE);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(215, 189, 226, 0.65)";
+          ctx.strokeStyle = "#9b59b6";
+          ctx.lineWidth = 1.2;
+          ctx.fill();
+          ctx.stroke();
+        } catch { /* skip invalid polygon */ }
+      });
+
       const dataUrl = canvas.toDataURL("image/png");
 
-      // Restore styles
+      // Restore polygon styles
       polygonsRef.current.forEach((p, i) => {
         const color = getColor(i);
         p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
@@ -665,6 +772,13 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1 });
         p.labelMarker.setOpacity(1);
       });
+      moduleLayersRef.current.forEach(l => l.setStyle({ opacity: 1, fillOpacity: 0.55, color: "#9b59b6", fillColor: "#d7bde2" }));
+      if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 1, fillOpacity: 0.04 });
+
+      // Restore original map view
+      if (printBoundsRef.current) {
+        map.setView(savedCenter, savedZoom, { animate: false });
+      }
 
       return dataUrl;
     },
@@ -715,7 +829,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       {/* 그리기 도구 */}
       <div className="flex gap-2 p-2 bg-white border-b items-center flex-shrink-0 flex-wrap">
-        {!isAnyDrawing ? (
+        {!isAnyDrawing && !isPrintAreaMode ? (
           <>
             <button onClick={() => startDrawing('inclusion')}
               className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium">
@@ -751,13 +865,40 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
               }`}>
               {isLocating ? "위치 확인 끄기" : "위치 확인"}
             </button>
+            {/* 인쇄 범위 */}
+            <div className="flex items-center gap-1 ml-auto">
+              <button
+                onClick={startPrintArea}
+                className={`px-3 py-2 rounded text-sm font-medium border ${
+                  printAreaSet
+                    ? "bg-red-50 text-red-600 border-red-300 hover:bg-red-100"
+                    : "bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100"
+                }`}
+              >
+                인쇄 범위 설정
+              </button>
+              {printAreaSet && (
+                <button onClick={clearPrintArea}
+                  className="px-2 py-2 bg-gray-100 text-gray-500 rounded text-xs hover:bg-gray-200 border border-gray-300">
+                  초기화
+                </button>
+              )}
+            </div>
             {(polygonCount > 0 || exclusionCount > 0) && (
-              <span className="text-xs font-medium ml-auto">
+              <span className="text-xs font-medium">
                 {polygonCount > 0 && <span className="text-blue-600">구역 {polygonCount}개</span>}
                 {polygonCount > 0 && exclusionCount > 0 && <span className="text-gray-400"> / </span>}
                 {exclusionCount > 0 && <span className="text-red-500">제외 {exclusionCount}개</span>}
               </span>
             )}
+          </>
+        ) : isPrintAreaMode ? (
+          <>
+            <button onClick={clearPrintArea}
+              className="px-3 py-2 bg-yellow-400 text-white rounded hover:bg-yellow-500 text-sm">취소</button>
+            <span className="text-xs text-red-500 font-medium">
+              {printAreaPhase === 0 ? "① 인쇄 범위 시작점 클릭" : "② 반대쪽 끝점 클릭"}
+            </span>
           </>
         ) : isDrawing ? (
           <>

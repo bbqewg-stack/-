@@ -23,198 +23,185 @@ export interface PdfReportData {
 }
 
 function formatKw(kw: number): string {
-  return kw >= 1000
-    ? (kw / 1000).toFixed(2) + " MW"
-    : kw.toFixed(2) + " kW";
+  return kw >= 1000 ? (kw / 1000).toFixed(2) + " MW" : kw.toFixed(2) + " kW";
 }
 
-function buildAngles(zones: ZoneInfo[]): string {
-  if (zones.length === 0) return "-";
-  return zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(", ");
-}
-
-function buildModuleComposition(zones: ZoneInfo[]): string {
-  if (zones.length === 0) return "-";
-  return zones.map(z => `${z.label}: ${z.moduleCount}장`).join(", ");
-}
-
-// Draw north arrow as inline SVG string
 function northArrowSvg(): string {
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" width="70" height="80" viewBox="0 0 70 80">
-  <circle cx="35" cy="42" r="25" fill="none" stroke="#cc0000" stroke-width="1.5"/>
-  <polygon points="35,18 28,42 42,42" fill="#cc0000"/>
-  <polygon points="35,66 28,42 42,42" fill="white" stroke="#cc0000" stroke-width="1"/>
-  <text x="35" y="12" text-anchor="middle" font-size="14" font-weight="bold" fill="#cc0000" font-family="sans-serif">N</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="72" viewBox="0 0 64 72">
+  <circle cx="32" cy="40" r="22" fill="none" stroke="#cc0000" stroke-width="1.5"/>
+  <polygon points="32,19 25,40 39,40" fill="#cc0000"/>
+  <polygon points="32,61 25,40 39,40" fill="white" stroke="#cc0000" stroke-width="1"/>
+  <text x="32" y="11" text-anchor="middle" font-size="13" font-weight="bold" fill="#cc0000" font-family="Arial,sans-serif">N</text>
 </svg>`;
 }
 
 function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
-  // Canvas dimensions: A3 landscape at 3.78px/mm (96dpi) * 1.5 = 5.67px/mm ≈ 150dpi
-  // A3 = 420×297mm → at 150dpi: 2480×1754, but let's use a simpler 2100×1485
-  const W = 2100;
-  const H = 1485;
+  // A3 landscape at 4px/mm = 1680 × 1188 px
+  const PW = 1680, PH = 1188;
+  const PAD = 32;      // outer border inset
+  const INNER = 52;    // inner border / content start
+  const RIGHT_W = 560; // right info panel width
+  const TITLE_H = 100; // bottom title bar height
+  const GAP = 16;      // gap between map and right panel
 
-  const MARGIN_OUT = 25;   // outer frame
-  const MARGIN_IN = 55;    // inner frame
-  const RIGHT_W = 660;     // right panel width
-  const TITLE_H = 90;      // bottom title bar height
-  const MAP_X = MARGIN_IN;
-  const MAP_Y = MARGIN_IN;
-  const MAP_W = W - MARGIN_IN - RIGHT_W - 20;
-  const MAP_H = H - MARGIN_IN - TITLE_H - MARGIN_OUT;
+  const mapW = PW - INNER - RIGHT_W - GAP - PAD;
+  const mapH = PH - INNER - TITLE_H - PAD;
+  const rpX = INNER + mapW + GAP;
+  const rpW = RIGHT_W;
+  const rpH = mapH;
 
-  // Right panel
-  const RP_X = MAP_X + MAP_W + 20;
-  const RP_Y = MARGIN_IN;
-  const RP_W = RIGHT_W;
-
-  // Row definitions for 발전용량 table
+  // 발전용량 table rows
+  const zones = data.zones;
   const tableRows = [
     ["총 발전용량", formatKw(data.totalCapacityKw)],
-    ["모 듈 규 격", `${data.moduleWidth}×${data.moduleHeight}mm / ${data.moduleWattage}W`],
+    ["모 듈 규 격", `${data.moduleWidth}×${data.moduleHeight}㎜ / ${data.moduleWattage}W`],
     ["모 듈 총 수 량", `${data.totalModules.toLocaleString("ko")} 장`],
-    ["모 듈 구 성", buildModuleComposition(data.zones)],
-    ["모 듈 각 도", buildAngles(data.zones)],
+    ["모 듈 구 성", zones.length ? zones.map(z => `${z.label}: ${z.moduleCount}장`).join(", ") : "-"],
+    ["모 듈 각 도", zones.length ? zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(", ") : "-"],
     ["인 버 터 구 성", ""],
   ];
 
-  const ROW_H = 46;
-  const LABEL_W = RP_W * 0.38;
+  const HDR_H = 30;
+  const ROW_H = Math.floor((rpH * 0.52 - HDR_H) / tableRows.length);
+  const LW = Math.floor(rpW * 0.36); // label column width
 
-  const tableRowsHtml = tableRows.map(([label, value]) => `
-    <div style="display:flex;height:${ROW_H}px;border-bottom:1px solid #999;box-sizing:border-box;">
-      <div style="width:${LABEL_W}px;flex-shrink:0;background:#ebebeb;border-right:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;letter-spacing:1px;">
-        ${label}
+  const tableRowsHtml = tableRows.map(([lbl, val]) => `
+    <div style="display:flex;height:${ROW_H}px;border-bottom:1px solid #aaa;">
+      <div style="width:${LW}px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
+                  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;letter-spacing:0.5px;text-align:center;padding:0 4px;">
+        ${lbl}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding-left:14px;font-size:15px;">
-        ${value}
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;word-break:break-all;line-height:1.4;">
+        ${val}
       </div>
-    </div>
-  `).join("");
+    </div>`).join("");
 
-  // Zone legend
-  const zoneLegendHtml = data.zones.map(z => `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;background:rgba(255,255,255,0.85);padding:3px 8px;border-radius:4px;">
-      <div style="width:18px;height:18px;background:${z.color};border-radius:3px;flex-shrink:0;"></div>
-      <span style="font-size:16px;font-weight:600;">${z.label}: ${formatKw(z.capacityKw)} (${z.moduleCount}장)</span>
-    </div>
-  `).join("");
+  // 건축개요
+  const archH = 52;
+  const archHtml = `
+    <div style="border:1px solid #aaa;border-top:none;height:${archH}px;display:flex;">
+      <div style="width:${LW}px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
+                  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;letter-spacing:2px;">
+        위 치
+      </div>
+      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:12px;line-height:1.5;word-break:break-all;">
+        ${data.location || ""}
+      </div>
+    </div>`;
 
-  // Bottom title bar meta cells
-  const metaRows = [
+  // Zone cards (if multiple zones)
+  const zoneCardsHtml = zones.length > 1 ? `
+    <div style="margin-top:14px;">
+      ${zones.map(z => `
+        <div style="display:flex;align-items:center;border:1px solid #ddd;border-radius:4px;margin-bottom:6px;overflow:hidden;">
+          <div style="width:10px;flex-shrink:0;background:${z.color};self-stretch;"></div>
+          <div style="flex:1;padding:5px 10px;">
+            <div style="font-size:13px;font-weight:700;color:#333;">${z.label}</div>
+            <div style="font-size:11px;color:#666;">${z.moduleCount}장 · ${formatKw(z.capacityKw)} · ${z.angle.toFixed(1)}°</div>
+          </div>
+        </div>`).join("")}
+    </div>` : "";
+
+  // Zone legend overlay (on map)
+  const legendHtml = zones.map(z => `
+    <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.88);
+                padding:3px 8px;border-radius:3px;margin-bottom:4px;font-size:13px;font-weight:600;border:1px solid rgba(0,0,0,0.12);">
+      <div style="width:14px;height:14px;background:${z.color};border-radius:2px;flex-shrink:0;"></div>
+      ${z.label}: ${formatKw(z.capacityKw)} (${z.moduleCount}장)
+    </div>`).join("");
+
+  // Bottom meta rows
+  const logoHtml = logoDataUrl
+    ? `<img src="${logoDataUrl}" style="max-height:${TITLE_H - 14}px;max-width:180px;object-fit:contain;" />`
+    : `<div style="font-size:20px;font-weight:900;color:#1a3a8c;font-family:Arial,sans-serif;">TNE</div>`;
+
+  const metaItems = [
     ["PROJECT", data.projectName || "태양광 발전소"],
     ["TITLE", "MODULE ARRAY"],
     ["SCALE", "S=1:100"],
     ["DWG No.", "6-01"],
     ["DATE", new Date().toISOString().slice(0, 7).replace("-", ".")],
   ];
-  const META_ROW_H = TITLE_H / metaRows.length;
-  const META_LABEL_W = 100;
-  const metaHtml = metaRows.map(([k, v]) => `
-    <div style="display:flex;height:${META_ROW_H}px;border-bottom:1px solid #999;box-sizing:border-box;">
-      <div style="width:${META_LABEL_W}px;background:#ebebeb;border-right:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">
+  const metaRowH = Math.floor(TITLE_H / metaItems.length);
+  const metaHtml = metaItems.map(([k, v]) => `
+    <div style="display:flex;height:${metaRowH}px;border-bottom:1px solid #aaa;box-sizing:border-box;">
+      <div style="width:76px;flex-shrink:0;background:#f0f0f0;border-right:1px solid #aaa;
+                  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;">
         ${k}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding-left:10px;font-size:13px;">
+      <div style="flex:1;display:flex;align-items:center;padding-left:8px;font-size:11px;">
         ${v}
       </div>
-    </div>
-  `).join("");
-
-  // ■ 건축개요 row
-  const archY = RP_Y + 30 + tableRows.length * ROW_H + 14;
-  const archH = 60;
-
-  const logoHtml = logoDataUrl
-    ? `<img src="${logoDataUrl}" style="height:${TITLE_H - 10}px;max-width:180px;object-fit:contain;" />`
-    : `<div style="font-size:22px;font-weight:900;color:#1a3a8c;font-family:sans-serif;">TNE</div>`;
+    </div>`).join("");
 
   return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: white; font-family: 'Malgun Gothic', '맑은 고딕', '나눔고딕', sans-serif; }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#fff;font-family:'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif;}
 </style>
 </head>
 <body>
-<div id="drawing" style="
-  width:${W}px;height:${H}px;
-  background:white;
-  position:relative;
-  overflow:hidden;
-">
+<div id="drawing" style="width:${PW}px;height:${PH}px;background:#fff;position:relative;overflow:hidden;">
 
   <!-- Outer border -->
-  <div style="position:absolute;inset:${MARGIN_OUT}px;border:2.5px solid #222;pointer-events:none;"></div>
+  <div style="position:absolute;inset:${PAD}px;border:2px solid #222;pointer-events:none;z-index:1;"></div>
   <!-- Inner border -->
-  <div style="position:absolute;inset:${MARGIN_IN - 8}px;border:1px solid #555;pointer-events:none;"></div>
+  <div style="position:absolute;inset:${INNER - 10}px;border:0.8px solid #666;pointer-events:none;z-index:1;"></div>
 
-  <!-- North arrow -->
-  <div style="position:absolute;left:${MAP_X + 8}px;top:${MAP_Y + 8}px;z-index:10;">
-    ${northArrowSvg()}
-  </div>
-
-  <!-- Map image -->
-  <div style="position:absolute;left:${MAP_X}px;top:${MAP_Y}px;width:${MAP_W}px;height:${MAP_H}px;border:1px solid #999;overflow:hidden;">
+  <!-- ── MAP AREA ── -->
+  <div style="position:absolute;left:${INNER}px;top:${INNER}px;width:${mapW}px;height:${mapH}px;overflow:hidden;border:1px solid #bbb;">
     ${data.mapImageDataUrl
-      ? `<img src="${data.mapImageDataUrl}" style="width:100%;height:100%;object-fit:cover;" />`
-      : `<div style="width:100%;height:100%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:20px;">지도 이미지</div>`
+      ? `<img src="${data.mapImageDataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+      : `<div style="width:100%;height:100%;background:#e8e8e8;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:18px;">지도 이미지</div>`
     }
-    <!-- Zone legend overlay -->
-    <div style="position:absolute;bottom:12px;left:12px;z-index:5;">
-      ${zoneLegendHtml}
-    </div>
+    <!-- North arrow -->
+    <div style="position:absolute;top:10px;left:10px;z-index:5;">${northArrowSvg()}</div>
+    <!-- Zone legend -->
+    <div style="position:absolute;bottom:12px;left:12px;z-index:5;">${legendHtml}</div>
   </div>
 
-  <!-- Right panel: 발전용량 -->
-  <div style="position:absolute;left:${RP_X}px;top:${RP_Y}px;width:${RP_W}px;">
-    <!-- Section header -->
-    <div style="background:#1a1a1a;color:white;padding:6px 12px;font-size:17px;font-weight:700;">
+  <!-- ── RIGHT PANEL ── -->
+  <div style="position:absolute;left:${rpX}px;top:${INNER}px;width:${rpW}px;height:${rpH}px;overflow:hidden;">
+
+    <!-- 발전용량 header -->
+    <div style="background:#1c1c1c;color:#fff;padding:5px 10px;font-size:15px;font-weight:700;letter-spacing:1px;height:${HDR_H}px;display:flex;align-items:center;">
       ■ 발 전 용 량
     </div>
-    <!-- Table -->
-    <div style="border:1px solid #999;border-bottom:none;">
+    <!-- 발전용량 table -->
+    <div style="border:1px solid #aaa;border-top:none;">
       ${tableRowsHtml}
     </div>
 
-    <!-- 건축개요 -->
-    <div style="margin-top:14px;background:#1a1a1a;color:white;padding:6px 12px;font-size:17px;font-weight:700;">
+    <!-- 건축개요 header -->
+    <div style="margin-top:12px;background:#1c1c1c;color:#fff;padding:5px 10px;font-size:15px;font-weight:700;letter-spacing:1px;height:${HDR_H}px;display:flex;align-items:center;">
       ■ 건 축 개 요
     </div>
-    <div style="border:1px solid #999;height:${archH}px;display:flex;">
-      <div style="width:${LABEL_W}px;background:#ebebeb;border-right:1px solid #999;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;">
-        위 &nbsp; 치
-      </div>
-      <div style="flex:1;display:flex;align-items:center;padding-left:14px;font-size:14px;line-height:1.5;">
-        ${data.location || ""}
-      </div>
-    </div>
+    ${archHtml}
+
+    ${zoneCardsHtml}
   </div>
 
-  <!-- Bottom title bar -->
+  <!-- ── BOTTOM TITLE BAR ── -->
   <div style="
     position:absolute;
-    left:${MARGIN_IN - 8}px;
-    bottom:${MARGIN_OUT}px;
-    right:${MARGIN_OUT}px;
-    height:${TITLE_H}px;
+    left:${INNER - 10}px;bottom:${PAD}px;
+    width:${PW - INNER + 10 - PAD}px;height:${TITLE_H}px;
     border:1.5px solid #555;
-    display:flex;
-    overflow:hidden;
+    display:flex;overflow:hidden;background:#fff;
   ">
     <!-- Logo -->
-    <div style="width:200px;flex-shrink:0;border-right:1.5px solid #555;display:flex;align-items:center;justify-content:center;padding:4px;">
+    <div style="width:190px;flex-shrink:0;border-right:1.5px solid #555;display:flex;align-items:center;justify-content:center;padding:6px;">
       ${logoHtml}
     </div>
-    <!-- MODULE ARRAY text -->
+    <!-- MODULE ARRAY -->
     <div style="flex:1;display:flex;align-items:center;justify-content:center;">
-      <span style="font-size:28px;font-weight:900;letter-spacing:6px;font-family:'Arial','Helvetica',sans-serif;">MODULE  ARRAY</span>
+      <span style="font-size:24px;font-weight:900;letter-spacing:5px;font-family:Arial,Helvetica,sans-serif;">MODULE  ARRAY</span>
     </div>
-    <!-- Meta info -->
-    <div style="width:${RP_W}px;flex-shrink:0;border-left:1.5px solid #555;font-size:13px;">
+    <!-- META -->
+    <div style="width:${rpW}px;flex-shrink:0;border-left:1.5px solid #555;">
       ${metaHtml}
     </div>
   </div>
@@ -241,9 +228,9 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
     });
   } catch { /* logo optional */ }
 
-  // Create hidden iframe to render HTML
+  // Render HTML in a hidden iframe
   const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:2100px;height:1485px;border:none;visibility:hidden;";
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:1680px;height:1188px;border:none;visibility:hidden;";
   document.body.appendChild(iframe);
 
   try {
@@ -252,9 +239,9 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
     iframe.contentDocument!.write(html);
     iframe.contentDocument!.close();
 
-    // Wait for images to load
+    // Wait for all images to load
     await new Promise<void>(resolve => {
-      const imgs = iframe.contentDocument!.querySelectorAll("img");
+      const imgs = Array.from(iframe.contentDocument!.querySelectorAll("img"));
       if (imgs.length === 0) { resolve(); return; }
       let loaded = 0;
       const done = () => { if (++loaded >= imgs.length) resolve(); };
@@ -262,30 +249,25 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
         if (img.complete) done();
         else { img.onload = done; img.onerror = done; }
       });
-      setTimeout(resolve, 3000); // fallback timeout
+      setTimeout(resolve, 4000);
     });
 
-    // Extra render delay
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
 
-    const drawingEl = iframe.contentDocument!.getElementById("drawing") as HTMLElement;
-
-    const canvas = await html2canvas(drawingEl, {
+    const el = iframe.contentDocument!.getElementById("drawing") as HTMLElement;
+    const canvas = await html2canvas(el, {
       scale: 1,
       useCORS: true,
       allowTaint: true,
       logging: false,
-      width: 2100,
-      height: 1485,
+      width: 1680,
+      height: 1188,
       backgroundColor: "#ffffff",
     });
 
-    // A3 landscape PDF
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
-    const imgData = canvas.toDataURL("image/jpeg", 0.95);
-    pdf.addImage(imgData, "JPEG", 0, 0, 420, 297);
+    pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 420, 297);
     pdf.save("태양광_배치도.pdf");
-
   } finally {
     document.body.removeChild(iframe);
   }
