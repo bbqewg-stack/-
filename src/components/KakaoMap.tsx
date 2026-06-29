@@ -17,16 +17,19 @@ interface PolygonData {
   area: number;
   coords: Coord[];
   angle: number;
+  label: string;
 }
 
 export interface KakaoMapHandle {
   captureMapImage: () => Promise<string>;
+  renameZone: (index: number, label: string) => void;
 }
 
 interface KakaoMapProps {
   onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]) => void;
   moduleConfig?: ModuleConfig;
   onModuleCountsChange?: (counts: number[]) => void;
+  hideZoneBorders?: boolean;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -129,6 +132,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   onAreasChange,
   moduleConfig,
   onModuleCountsChange = () => {},
+  hideZoneBorders = false,
 }: KakaoMapProps, ref) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -200,8 +204,21 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideZoneBordersRef = useRef(hideZoneBorders);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
+
+  useEffect(() => {
+    hideZoneBordersRef.current = hideZoneBorders;
+    polygonsRef.current.forEach((p, i) => {
+      if (hideZoneBorders) {
+        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+      } else {
+        const color = getColor(i);
+        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+      }
+    });
+  }, [hideZoneBorders]);
 
   const renderModules = useCallback(() => {
     const config = moduleConfigRef.current;
@@ -490,7 +507,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         const polygon = L.polygon(capturedVertices, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
         const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
         const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-        exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0 }];
+        exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: `제외 ${exIdx}` }];
         setExclusionCount(exclusionPolygonsRef.current.length);
       } else {
         const colorIndex = polygonsRef.current.length;
@@ -499,7 +516,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         const polygon = L.polygon(capturedVertices, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
         const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
         const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-        polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords) }];
+        polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords), label }];
         setPolygonCount(polygonsRef.current.length);
       }
       notifyAreas();
@@ -589,7 +606,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             const polygon = L.polygon(corners, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
             const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
             const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-            exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0 }];
+            exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: `제외 ${exIdx}` }];
             setExclusionCount(exclusionPolygonsRef.current.length);
           } else {
             const colorIndex = polygonsRef.current.length;
@@ -598,7 +615,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             const polygon = L.polygon(corners, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
             const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
             const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-            polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2) }];
+            polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2), label }];
             setPolygonCount(polygonsRef.current.length);
           }
           notifyAreas();
@@ -745,7 +762,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             lng: polyData.coords.reduce((s, c) => s + c.lng, 0) / polyData.coords.length,
           };
           const pt = map.latLngToContainerPoint(centroid);
-          const label = String.fromCharCode(65 + i) + "구역";
+          const label = polyData.label;
           const px = pt.x * SCALE;
           const py = pt.y * SCALE;
           const color = getColor(i);
@@ -779,8 +796,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       // Restore styles
       polygonsRef.current.forEach((p, i) => {
-        const color = getColor(i);
-        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        if (hideZoneBordersRef.current) {
+          p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+        } else {
+          const color = getColor(i);
+          p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        }
         p.labelMarker.setOpacity(1);
       });
       exclusionPolygonsRef.current.forEach(p => {
@@ -810,6 +831,20 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       }
 
       return canvas.toDataURL("image/png");
+    },
+    renameZone: (index: number, label: string) => {
+      const polyData = polygonsRef.current[index];
+      if (!polyData) return;
+      polyData.label = label;
+      const L = leafletRef.current;
+      if (!L) return;
+      const color = getColor(index);
+      const labelIcon = L.divIcon({
+        html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`,
+        className: "",
+        iconAnchor: [20, 10],
+      });
+      polyData.labelMarker.setIcon(labelIcon);
     },
   }), []);
 

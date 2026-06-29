@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import KakaoMap, { KakaoMapHandle } from "@/components/KakaoMap";
 import ModuleLayoutPanel from "@/components/ModuleLayoutPanel";
@@ -18,7 +18,30 @@ export default function LayoutPage() {
     enabled: true,
   });
   const [moduleCounts, setModuleCounts] = useState<number[]>([]);
+  const [zoneLabels, setZoneLabels] = useState<string[]>([]);
   const mapRef = useRef<KakaoMapHandle>(null);
+
+  useEffect(() => {
+    const inclusions = polygons.filter(p => p.type === 'inclusion');
+    setZoneLabels(prev => {
+      const next = [...prev];
+      while (next.length < inclusions.length) {
+        next.push(String.fromCharCode(65 + next.length) + "구역");
+      }
+      return next.slice(0, inclusions.length);
+    });
+  }, [polygons]);
+
+  const handleZoneLabelChange = useCallback((index: number, label: string) => {
+    setZoneLabels(prev => {
+      const next = [...prev];
+      next[index] = label;
+      return next;
+    });
+    mapRef.current?.renameZone(index, label);
+  }, []);
+
+  const hideZoneBorders = moduleConfig.enabled && moduleCounts.reduce((s, n) => s + n, 0) > 0;
 
   return (
     <div className="h-screen flex flex-col">
@@ -66,6 +89,7 @@ export default function LayoutPage() {
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
+              hideZoneBorders={hideZoneBorders}
             />
           </div>
         </div>
@@ -76,6 +100,8 @@ export default function LayoutPage() {
             onModuleConfigChange={setModuleConfig}
             moduleCounts={moduleCounts}
             mapRef={mapRef}
+            zoneLabels={zoneLabels}
+            onZoneLabelChange={handleZoneLabelChange}
           />
         </div>
       </main>

@@ -15,6 +15,8 @@ interface ModuleLayoutPanelProps {
   onModuleConfigChange: (config: ModuleConfig) => void;
   moduleCounts: number[];
   mapRef?: RefObject<KakaoMapHandle | null>;
+  zoneLabels?: string[];
+  onZoneLabelChange?: (index: number, label: string) => void;
 }
 
 function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
@@ -45,6 +47,8 @@ export default function ModuleLayoutPanel({
   onModuleConfigChange,
   moduleCounts,
   mapRef,
+  zoneLabels,
+  onZoneLabelChange,
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
@@ -77,7 +81,7 @@ export default function ModuleLayoutPanel({
     return {
       mapImageDataUrl,
       zones: inclusions.map((inc, i) => ({
-        label: String.fromCharCode(65 + i) + "구역",
+        label: zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역",
         color: POLYGON_COLORS[i % POLYGON_COLORS.length],
         moduleCount: moduleCounts[i] ?? 0,
         capacityKw: ((moduleCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
@@ -259,22 +263,32 @@ export default function ModuleLayoutPanel({
           </p>
           <p className="text-xs text-gray-400 mt-0.5">{(totalArea / 10000).toFixed(3)} ha</p>
 
-          {inclusions.length > 1 && (
-            <div className="mt-2 pt-2 border-t space-y-1">
-              {inclusions.map((p, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <span className="flex items-center gap-1 text-xs text-gray-500">
-                    <span style={{ background: POLYGON_COLORS[i % POLYGON_COLORS.length] }}
-                      className="inline-block w-2 h-2 rounded-full" />
-                    {String.fromCharCode(65 + i)}구역
-                  </span>
-                  <span className="text-xs text-gray-600">
-                    {Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²
-                  </span>
+          <div className="mt-2 pt-2 border-t space-y-1.5">
+            {inclusions.map((p, i) => {
+              const color = POLYGON_COLORS[i % POLYGON_COLORS.length];
+              const label = zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역";
+              return (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full flex-shrink-0" />
+                  {onZoneLabelChange ? (
+                    <input
+                      type="text"
+                      value={label}
+                      onChange={e => onZoneLabelChange(i, e.target.value)}
+                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 outline-none focus:border-blue-400 bg-white"
+                    />
+                  ) : (
+                    <span className="text-xs text-gray-600 flex-1">{label}</span>
+                  )}
+                  {inclusions.length > 1 && (
+                    <span className="text-xs text-gray-500 flex-shrink-0">
+                      {Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -317,7 +331,9 @@ export default function ModuleLayoutPanel({
                   <div key={i} className="bg-white rounded p-2 border">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full" />
-                      <span className="text-xs font-medium text-gray-600">{String.fromCharCode(65 + i)}구역</span>
+                      <span className="text-xs font-medium text-gray-600">
+                        {zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역"}
+                      </span>
                       {polyAngle !== undefined && (
                         <span className="text-xs text-gray-400 ml-1">{polyAngle.toFixed(1)}°</span>
                       )}
