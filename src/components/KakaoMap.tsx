@@ -29,7 +29,6 @@ interface KakaoMapProps {
   onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]) => void;
   moduleConfig?: ModuleConfig;
   onModuleCountsChange?: (counts: number[]) => void;
-  hideZoneBorders?: boolean;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -132,7 +131,6 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   onAreasChange,
   moduleConfig,
   onModuleCountsChange = () => {},
-  hideZoneBorders = false,
 }: KakaoMapProps, ref) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,21 +202,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const moduleConfigRef = useRef<ModuleConfig | undefined>(moduleConfig);
   const onModuleCountsChangeRef = useRef(onModuleCountsChange);
   const renderDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hideZoneBordersRef = useRef(hideZoneBorders);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
-
-  useEffect(() => {
-    hideZoneBordersRef.current = hideZoneBorders;
-    polygonsRef.current.forEach((p, i) => {
-      if (hideZoneBorders) {
-        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
-      } else {
-        const color = getColor(i);
-        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
-      }
-    });
-  }, [hideZoneBorders]);
 
   const renderModules = useCallback(() => {
     const config = moduleConfigRef.current;
@@ -230,6 +215,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
     if (!config?.enabled || !map || !L) {
       onModuleCountsChangeRef.current([]);
+      // 모듈 숨김 시 구역 테두리/음영 복원
+      polygonsRef.current.forEach((p, i) => {
+        const color = getColor(i);
+        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+      });
       return;
     }
 
@@ -256,10 +246,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       modules.forEach((corners) => {
         const latLngs = corners.map((c) => [c.lat, c.lng] as [number, number]);
         const poly = L.polygon(latLngs, {
-          color: "#9b59b6",
-          weight: 0.8,
-          fillColor: "#d7bde2",
-          fillOpacity: 0.55,
+          color: "#1e3a8a",
+          weight: 1.0,
+          fillColor: "#3b82f6",
+          fillOpacity: 0.75,
           renderer: moduleRendererRef.current,
         }).addTo(map);
         moduleLayersRef.current.push(poly);
@@ -267,6 +257,17 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     });
 
     onModuleCountsChangeRef.current(counts);
+
+    // 모듈이 배치되면 구역 테두리/음영 숨김
+    const totalModules = counts.reduce((s, n) => s + n, 0);
+    polygonsRef.current.forEach((p, i) => {
+      if (totalModules > 0) {
+        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+      } else {
+        const color = getColor(i);
+        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+      }
+    });
   }, []);
 
   const scheduleRenderModules = useCallback(() => {
@@ -794,9 +795,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         } catch { /* skip */ }
       });
 
-      // Restore styles
+      // Restore styles (modules present → keep zones hidden, else restore)
+      const hasModules = moduleLayersRef.current.length > 0;
       polygonsRef.current.forEach((p, i) => {
-        if (hideZoneBordersRef.current) {
+        if (hasModules) {
           p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         } else {
           const color = getColor(i);

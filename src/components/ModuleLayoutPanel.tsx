@@ -271,12 +271,15 @@ export default function ModuleLayoutPanel({
                 <div key={i} className="flex items-center gap-1.5">
                   <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full flex-shrink-0" />
                   {onZoneLabelChange ? (
-                    <input
-                      type="text"
+                    <select
                       value={label}
                       onChange={e => onZoneLabelChange(i, e.target.value)}
-                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 outline-none focus:border-blue-400 bg-white"
-                    />
+                      className="text-xs border rounded px-1 py-0.5 flex-1 min-w-0 outline-none focus:border-blue-400 bg-white"
+                    >
+                      {['A','B','C','D','E','F','G'].map(l => (
+                        <option key={l} value={`${l}구역`}>{l}구역</option>
+                      ))}
+                    </select>
                   ) : (
                     <span className="text-xs text-gray-600 flex-1">{label}</span>
                   )}

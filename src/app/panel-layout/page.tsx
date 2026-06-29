@@ -41,7 +41,6 @@ export default function LayoutPage() {
     mapRef.current?.renameZone(index, label);
   }, []);
 
-  const hideZoneBorders = moduleConfig.enabled && moduleCounts.reduce((s, n) => s + n, 0) > 0;
 
   return (
     <div className="h-screen flex flex-col">
@@ -89,7 +88,6 @@ export default function LayoutPage() {
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
-              hideZoneBorders={hideZoneBorders}
             />
           </div>
         </div>
