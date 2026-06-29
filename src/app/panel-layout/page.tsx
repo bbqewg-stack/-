@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
-import KakaoMap from "@/components/KakaoMap";
+import KakaoMap, { KakaoMapHandle } from "@/components/KakaoMap";
 import ModuleLayoutPanel from "@/components/ModuleLayoutPanel";
 import { ModuleConfig, DEFAULT_MODULE_CONFIG } from "@/lib/moduleLayout";
 
@@ -18,6 +18,7 @@ export default function LayoutPage() {
     enabled: true,
   });
   const [moduleCounts, setModuleCounts] = useState<number[]>([]);
+  const mapRef = useRef<KakaoMapHandle>(null);
 
   return (
     <div className="h-screen flex flex-col">
@@ -61,6 +62,7 @@ export default function LayoutPage() {
         <div className="flex-1 relative" style={{ minHeight: 0 }}>
           <div className="absolute inset-0">
             <KakaoMap
+              ref={mapRef}
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
@@ -73,6 +75,7 @@ export default function LayoutPage() {
             moduleConfig={moduleConfig}
             onModuleConfigChange={setModuleConfig}
             moduleCounts={moduleCounts}
+            mapRef={mapRef}
           />
         </div>
       </main>

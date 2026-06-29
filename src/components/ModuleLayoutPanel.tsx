@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, RefObject } from "react";
 import { ModuleConfig, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
+import { KakaoMapHandle } from "@/components/KakaoMap";
 
 interface Coord {
   lat: number;
@@ -13,6 +14,7 @@ interface ModuleLayoutPanelProps {
   moduleConfig: ModuleConfig;
   onModuleConfigChange: (config: ModuleConfig) => void;
   moduleCounts: number[];
+  mapRef?: RefObject<KakaoMapHandle | null>;
 }
 
 function pointInPolygon(point: Coord, polygon: Coord[]): boolean {
@@ -42,9 +44,11 @@ export default function ModuleLayoutPanel({
   moduleConfig,
   onModuleConfigChange,
   moduleCounts,
+  mapRef,
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
@@ -67,8 +71,50 @@ export default function ModuleLayoutPanel({
   const set = (patch: Partial<ModuleConfig>) =>
     onModuleConfigChange({ ...moduleConfig, ...patch });
 
+  const handlePrint = async () => {
+    if (!mapRef?.current) return;
+    setIsPrinting(true);
+    try {
+      const { generatePdf } = await import("@/lib/generatePdf");
+      const mapImageDataUrl = await mapRef.current.captureMapImage();
+      const zones = inclusions.map((inc, i) => ({
+        label: String.fromCharCode(65 + i) + "구역",
+        color: POLYGON_COLORS[i % POLYGON_COLORS.length],
+        moduleCount: moduleCounts[i] ?? 0,
+        capacityKw: ((moduleCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
+        angle: inc.angle ?? 0,
+      }));
+      await generatePdf({
+        mapImageDataUrl,
+        zones,
+        totalModules,
+        totalCapacityKw: capacityKw,
+        moduleWidth: moduleConfig.moduleWidth,
+        moduleHeight: moduleConfig.moduleHeight,
+        moduleWattage: moduleConfig.moduleWattage,
+        rowSpacing: moduleConfig.rowSpacing,
+        colSpacing: moduleConfig.colSpacing,
+        location: "",
+        projectName: "태양광 발전소",
+      });
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 p-4 h-full overflow-y-auto">
+
+      {/* PDF 인쇄 버튼 */}
+      {mapRef && totalModules > 0 && (
+        <button
+          onClick={handlePrint}
+          disabled={isPrinting}
+          className="w-full py-2 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+        >
+          {isPrinting ? "PDF 생성 중..." : "📄 도면 PDF 인쇄"}
+        </button>
+      )}
 
       {/* 모듈 규격 */}
       <div className="bg-white border rounded-lg p-4">
@@ -112,6 +158,13 @@ export default function ModuleLayoutPanel({
               <span className="text-xs text-gray-400">mm</span>
             </div>
           </LabelRow>
+          <LabelRow label="세로 최대 장수">
+            <div className="flex items-center gap-1">
+              <NumInput value={moduleConfig.maxModulesPerColumn} min={1} max={50} step={1}
+                onChange={v => set({ maxModulesPerColumn: v })} />
+              <span className="text-xs text-gray-400">장</span>
+            </div>
+          </LabelRow>
         </div>
       </div>
 
@@ -150,7 +203,7 @@ export default function ModuleLayoutPanel({
                   <span className="flex items-center gap-1 text-xs text-gray-500">
                     <span style={{ background: POLYGON_COLORS[i % POLYGON_COLORS.length] }}
                       className="inline-block w-2 h-2 rounded-full" />
-                    영역 {i + 1}
+                    {String.fromCharCode(65 + i)}구역
                   </span>
                   <span className="text-xs text-gray-600">
                     {Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²
@@ -201,7 +254,7 @@ export default function ModuleLayoutPanel({
                   <div key={i} className="bg-white rounded p-2 border">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full" />
-                      <span className="text-xs font-medium text-gray-600">영역 {i + 1}</span>
+                      <span className="text-xs font-medium text-gray-600">{String.fromCharCode(65 + i)}구역</span>
                       {polyAngle !== undefined && (
                         <span className="text-xs text-gray-400 ml-1">{polyAngle.toFixed(1)}°</span>
                       )}

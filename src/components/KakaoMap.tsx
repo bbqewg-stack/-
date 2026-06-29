@@ -1,7 +1,7 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import { ModuleConfig, calculateModuleLayout, isCoordInPolygon } from "@/lib/moduleLayout";
 
 interface Coord {
@@ -17,6 +17,10 @@ interface PolygonData {
   area: number;
   coords: Coord[];
   angle: number;
+}
+
+export interface KakaoMapHandle {
+  captureMapImage: () => Promise<string>;
 }
 
 interface KakaoMapProps {
@@ -121,11 +125,11 @@ interface SearchResult {
   lon: string;
 }
 
-export default function LeafletMap({
+const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap({
   onAreasChange,
   moduleConfig,
   onModuleCountsChange = () => {},
-}: KakaoMapProps) {
+}: KakaoMapProps, ref) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null);
@@ -415,9 +419,9 @@ export default function LeafletMap({
       } else {
         const colorIndex = polygonsRef.current.length;
         const color = getColor(colorIndex);
-        const label = colorIndex + 1;
+        const label = String.fromCharCode(65 + colorIndex) + "구역";
         const polygon = L.polygon(capturedVertices, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
-        const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">영역 ${label}</div>`, className: "", iconAnchor: [20, 10] });
+        const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
         const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
         polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords) }];
         setPolygonCount(polygonsRef.current.length);
@@ -514,9 +518,9 @@ export default function LeafletMap({
           } else {
             const colorIndex = polygonsRef.current.length;
             const color = getColor(colorIndex);
-            const label = colorIndex + 1;
+            const label = String.fromCharCode(65 + colorIndex) + "구역";
             const polygon = L.polygon(corners, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
-            const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">영역 ${label}</div>`, className: "", iconAnchor: [20, 10] });
+            const labelIcon = L.divIcon({ html: `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${label}</div>`, className: "", iconAnchor: [20, 10] });
             const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
             polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2) }];
             setPolygonCount(polygonsRef.current.length);
@@ -624,6 +628,48 @@ export default function LeafletMap({
 
   const isAnyDrawing = isDrawing || isRectDrawing;
 
+  // Expose captureMapImage: temporarily hide polygon fills/borders, capture, restore
+  useImperativeHandle(ref, () => ({
+    captureMapImage: async (): Promise<string> => {
+      const html2canvas = (await import("html2canvas")).default;
+      const mapEl = mapRef.current;
+      if (!mapEl) return "";
+
+      // Hide inclusion polygon fills for print (keep module panels visible)
+      polygonsRef.current.forEach(p => {
+        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+        p.labelMarker.setOpacity(0);
+      });
+      exclusionPolygonsRef.current.forEach(p => {
+        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+        p.labelMarker.setOpacity(0);
+      });
+
+      await new Promise(r => setTimeout(r, 200));
+
+      const canvas = await html2canvas(mapEl, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 2,
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+
+      // Restore styles
+      polygonsRef.current.forEach((p, i) => {
+        const color = getColor(i);
+        p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        p.labelMarker.setOpacity(1);
+      });
+      exclusionPolygonsRef.current.forEach(p => {
+        p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1 });
+        p.labelMarker.setOpacity(1);
+      });
+
+      return dataUrl;
+    },
+  }), []);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* 주소 검색 */}
@@ -707,7 +753,7 @@ export default function LeafletMap({
             </button>
             {(polygonCount > 0 || exclusionCount > 0) && (
               <span className="text-xs font-medium ml-auto">
-                {polygonCount > 0 && <span className="text-blue-600">영역 {polygonCount}개</span>}
+                {polygonCount > 0 && <span className="text-blue-600">구역 {polygonCount}개</span>}
                 {polygonCount > 0 && exclusionCount > 0 && <span className="text-gray-400"> / </span>}
                 {exclusionCount > 0 && <span className="text-red-500">제외 {exclusionCount}개</span>}
               </span>
@@ -749,4 +795,6 @@ export default function LeafletMap({
       <div ref={mapRef} style={{ flex: 1 }} />
     </div>
   );
-}
+});
+
+export default LeafletMap;

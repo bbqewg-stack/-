@@ -6,6 +6,7 @@ export interface ModuleConfig {
   rowSpacing: number;     // mm between rows
   colSpacing: number;     // mm between columns
   angle: number;          // grid rotation degrees (CCW from east)
+  maxModulesPerColumn: number; // max vertical modules per block (0 = unlimited)
 }
 
 export interface Coord {
@@ -21,6 +22,7 @@ export const DEFAULT_MODULE_CONFIG: ModuleConfig = {
   rowSpacing: 10,
   colSpacing: 10,
   angle: 0,
+  maxModulesPerColumn: 5,
 };
 
 export function isCoordInPolygon(point: Coord, polygon: Coord[]): boolean {
@@ -112,10 +114,14 @@ export function calculateModuleLayout(
   const startX = minX + offsetX;
   const startY = minY + offsetY;
 
-  for (let row = 0; row < numRows; row++) {
-    const y = startY + row * rowStep;
-    for (let col = 0; col < numCols; col++) {
-      const x = startX + col * colStep;
+  const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
+
+  for (let col = 0; col < numCols; col++) {
+    const x = startX + col * colStep;
+    let placedInCol = 0;
+    for (let row = 0; row < numRows; row++) {
+      if (placedInCol >= maxPerCol) break;
+      const y = startY + row * rowStep;
       const corners = [
         { x, y }, { x: x + mW, y }, { x: x + mW, y: y + mH }, { x, y: y + mH },
       ];
@@ -126,6 +132,7 @@ export function calculateModuleLayout(
       if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
 
       result.push(corners.map((c) => fromXY(rot(c, config.angle), origin)));
+      placedInCol++;
 
       if (result.length >= MODULE_LAYOUT_LIMIT) return result;
     }
