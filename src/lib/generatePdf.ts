@@ -139,18 +139,26 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
   const LW = 138;
+  // Compute per-row padding for reliable vertical centering in html2canvas (flex align-items:center unreliable in iframes)
+  const lblPad = Math.max(6, Math.floor((capRowH - 22) / 2));
 
-  const capRowsHtml = capRows.map(([lbl, val], idx) => `
+  const capRowsHtml = capRows.map(([lbl, val], idx) => {
+    const isMultiLine = val.includes('<br/>');
+    const isBigFont  = val.includes('font-size:22px');
+    const contentH   = isMultiLine ? 50 : isBigFont ? 32 : 22;
+    const valPad     = Math.max(4, Math.floor((capRowH - contentH) / 2));
+    return `
     <div style="display:flex;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
       <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  display:flex;align-items:center;padding:0 10px;
-                  font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;">
+                  padding:${lblPad}px 10px;
+                  font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
         ${lbl}
       </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:16px;font-weight:600;color:${TEXT};line-height:1.5;">
+      <div style="flex:1;padding:${valPad}px 12px;font-size:16px;font-weight:600;color:${TEXT};line-height:1.5;">
         ${val}
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   // 로고 (상단 헤더용)
   const logoHtmlHeader = logoDataUrl
@@ -213,9 +221,9 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
-      <div style="background:${NAVY};color:#fff;padding:0 14px;height:34px;display:flex;align-items:center;gap:8px;">
-        <div style="width:3px;height:15px;background:#7dd3fc;border-radius:2px;flex-shrink:0;"></div>
-        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;">태양광발전소 사업개요</span>
+      <div style="background:${NAVY};color:#fff;padding:8px 14px;height:34px;display:flex;gap:8px;">
+        <div style="width:3px;height:15px;background:#7dd3fc;border-radius:2px;flex-shrink:0;margin-top:1px;"></div>
+        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;line-height:1.1;">태양광발전소 사업개요</span>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -227,34 +235,34 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- COMPANY INFO BLOCK -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
-      <!-- Company header -->
-      <div style="background:${NAVY};padding:0 16px;height:60px;display:flex;align-items:center;gap:14px;">
-        <div style="flex-shrink:0;display:flex;align-items:center;">${logoHtmlCompany}</div>
-        <div style="width:1px;height:44px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
-        <div style="display:flex;flex-direction:column;justify-content:center;gap:3px;">
-          <div style="font-size:22px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;line-height:1;">TNE</div>
-          <div style="font-size:10px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;line-height:1;">Tech &amp; Engineering Corporation</div>
+      <!-- Company header: padding 기반 수직 정렬 -->
+      <div style="background:${NAVY};padding:4px 16px;height:60px;display:flex;gap:14px;">
+        <div style="flex-shrink:0;padding-top:4px;">${logoHtmlCompany}</div>
+        <div style="width:1px;height:44px;background:rgba(255,255,255,0.25);flex-shrink:0;margin-top:8px;"></div>
+        <div style="padding-top:10px;">
+          <div style="font-size:22px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;line-height:1.1;">TNE</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:3px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
-      <!-- Contact rows (Mobile 제거) -->
+      <!-- Contact rows: padding 기반 수직 정렬 (Mobile 제거) -->
       <div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
-          <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</div>
-          <div style="width:48px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
-          <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
+          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</div>
+          <div style="width:48px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};padding:5px 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
+          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</div>
         </div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
-          <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
+          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</div>
         </div>
         <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
-          <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
+          <div style="flex:1;padding:5px 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</div>
         </div>
         <div style="display:flex;height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
-          <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
+          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};padding:5px 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
+          <div style="flex:1;padding:5px 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
         </div>
       </div>
     </div>

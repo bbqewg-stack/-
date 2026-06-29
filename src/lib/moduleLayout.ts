@@ -137,31 +137,36 @@ export function calculateModuleLayout(
   const baseMinX = minX, baseMaxX = minX + baseNumCols * colStep;
   const baseMinY = minY, baseMaxY = minY + baseNumRows * rowStep;
 
+  // maxPerCol applies only to polygon cells; extended cells are always placed freely
   const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
 
   for (let col = 0; col < numCols; col++) {
     const x = startX + col * colStep;
-    let placedInCol = 0;
+    let polyPlacedInCol = 0; // counts only non-extended polygon cells
     for (let row = numRows - 1; row >= 0; row--) {
-      if (placedInCol >= maxPerCol) break;
       const y = startY + row * rowStep;
       const corners = [
         { x, y }, { x: x + mW, y }, { x: x + mW, y: y + mH }, { x, y: y + mH },
       ];
       const center = { x: x + mW / 2, y: y + mH / 2 };
 
-      // Extended cells (outside base polygon area) skip polygon boundary check
+      // Extended cells (outside base polygon area) skip polygon boundary check and maxPerCol
       const isExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6 ||
                          y < baseMinY - 1e-6 || y + mH > baseMaxY + 1e-6;
-      if (!isExtended) {
+      if (isExtended) {
+        // Extended cell: bypass polygon check and maxPerCol, still honor exclusions
+        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+      } else {
+        // Polygon cell: apply boundary check and maxPerCol; use continue (not break)
+        // so bottom-extended cells are still reachable after maxPerCol is hit
+        if (polyPlacedInCol >= maxPerCol) continue;
         if (!corners.every((c) => inPoly2D(c, poly))) continue;
         if (!inPoly2D(center, poly)) continue;
+        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+        polyPlacedInCol++;
       }
-      if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
 
       result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
-      placedInCol++;
-
       if (result.length >= MODULE_LAYOUT_LIMIT) return result;
     }
   }
