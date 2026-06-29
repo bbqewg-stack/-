@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, RefObject, useCallback } from "react";
+import { useState, RefObject, useCallback, useEffect } from "react";
 import { ModuleConfig, ZoneAdjust, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
 import { KakaoMapHandle, SavedPolygon } from "@/components/KakaoMap";
 
@@ -20,6 +20,7 @@ interface ModuleLayoutPanelProps {
   onZoneAngleChange?: (index: number, angle: number) => void;
   onZoneRemove?: (index: number) => void;
   onLoadProject?: (data: { moduleConfig: ModuleConfig; zoneLabels: string[] }) => void;
+  externalLocation?: string;
 }
 
 interface SavedProject {
@@ -93,6 +94,7 @@ export default function ModuleLayoutPanel({
   onZoneAngleChange,
   onZoneRemove,
   onLoadProject,
+  externalLocation,
 }: ModuleLayoutPanelProps) {
   const [peakSunHours, setPeakSunHours] = useState(3.5);
   const [systemEfficiency, setSystemEfficiency] = useState(85);
@@ -102,6 +104,10 @@ export default function ModuleLayoutPanel({
   const [projectName, setProjectName] = useState("태양광 발전소");
   const [location, setLocation] = useState("");
   const [zoneAdjusts, setZoneAdjusts] = useState<ZoneAdjust[]>([]);
+
+  useEffect(() => {
+    if (externalLocation) setLocation(externalLocation);
+  }, [externalLocation]);
 
   // Save / Load modal state
   const [saveModal, setSaveModal] = useState(false);

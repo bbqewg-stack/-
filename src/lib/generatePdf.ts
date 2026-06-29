@@ -30,11 +30,19 @@ function formatKw(kw: number): string {
 }
 
 function northArrowSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="72" viewBox="0 0 64 72">
-  <circle cx="32" cy="40" r="22" fill="none" stroke="#cc0000" stroke-width="1.5"/>
-  <polygon points="32,19 25,40 39,40" fill="#cc0000"/>
-  <polygon points="32,61 25,40 39,40" fill="white" stroke="#cc0000" stroke-width="1"/>
-  <text x="32" y="11" text-anchor="middle" font-size="13" font-weight="bold" fill="#cc0000" font-family="Arial,sans-serif">N</text>
+  const N = "#1c2f4f", A = "#1e5fa8";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -6 108 108" width="84" height="84">
+  <circle cx="50" cy="50" r="44" fill="white" stroke="${N}" stroke-width="3"/>
+  <circle cx="50" cy="50" r="28" fill="none" stroke="${N}" stroke-width="0.7" stroke-dasharray="4,3" opacity="0.25"/>
+  <polygon points="50,8 42,50 50,42 58,50" fill="${N}"/>
+  <polygon points="50,92 42,50 50,58 58,50" fill="#dde7f5" stroke="${N}" stroke-width="1.5"/>
+  <polygon points="92,50 76,44 76,56" fill="#8899bb" opacity="0.6"/>
+  <polygon points="8,50 24,44 24,56" fill="#8899bb" opacity="0.6"/>
+  <circle cx="50" cy="50" r="6" fill="${A}" stroke="white" stroke-width="2.5"/>
+  <text x="50" y="2" text-anchor="middle" dominant-baseline="middle" font-size="17" font-weight="900" fill="${N}" font-family="Arial,sans-serif">N</text>
+  <text x="50" y="98" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="${N}" font-family="Arial,sans-serif">S</text>
+  <text x="4" y="50" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="${N}" font-family="Arial,sans-serif">W</text>
+  <text x="96" y="50" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="${N}" font-family="Arial,sans-serif">E</text>
 </svg>`;
 }
 
@@ -115,13 +123,19 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   // 인버터 구성 자동계산
   const inverterText = calcInverters(data.totalCapacityKw);
 
+  // 방위각 min/max
+  const angles = zones.map(z => z.angle).filter(a => isFinite(a));
+  const angleText = angles.length === 0 ? "-"
+    : angles.every(a => a === angles[0]) ? `${angles[0].toFixed(1)}°`
+    : `최소 ${Math.min(...angles).toFixed(1)}° / 최대 ${Math.max(...angles).toFixed(1)}°`;
+
   // ── Capacity table ──
   const capRows = [
     ["총 발전용량",  `<b style="font-size:20px;color:${ACCENT}">${formatKw(data.totalCapacityKw)}</b>`],
     ["모듈 규격",    moduleSpecText],
     ["모듈 총 수량", `${data.totalModules.toLocaleString("ko")} 장`],
     ["모듈 구성",    moduleConfigText],
-    ["모듈 각도",    zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(" &nbsp;|&nbsp; ") || "-"],
+    ["모듈 방위각",  angleText],
     ["인버터 구성",  inverterText],
   ];
   const capRowH = Math.floor((infoH * 0.78 - 36) / capRows.length);
@@ -150,27 +164,6 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
         ${data.location || "&nbsp;"}
       </div>
     </div>`;
-
-  // ── Title block ──
-  const metaItems = [
-    ["PROJECT", data.projectName || "태양광 발전소"],
-    ["TITLE",   "MODULE ARRAY"],
-    ["SCALE",   "S=1:100"],
-    ["DWG No.", "6-01"],
-    ["DATE",    new Date().toISOString().slice(0, 7).replace("-", ".")],
-  ];
-  const metaRowH = Math.floor((TITLE_BLOCK_H - 56) / metaItems.length);
-  const metaHtml = metaItems.map(([k, v]) => `
-    <div style="display:flex;height:${metaRowH}px;">
-      <div style="width:84px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  display:flex;align-items:center;padding:0 8px;
-                  font-size:12px;font-weight:700;color:${MUTED};letter-spacing:0.5px;background:${STRIPE};">
-        ${k}
-      </div>
-      <div style="flex:1;display:flex;align-items:center;padding:0 10px;font-size:13px;color:${TEXT};">
-        ${v}
-      </div>
-    </div>`).join("");
 
   // 헤더용 로고 (어두운 배경 → 흰 배경 박스로 감쌈)
   const logoHtmlDark = logoDataUrl
@@ -210,7 +203,7 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
     <!-- Title + 설치위치 -->
     <div style="flex:1;">
       <div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.55);letter-spacing:2px;margin-bottom:3px;">SOLAR PV DESIGN</div>
-      <div style="font-size:17px;font-weight:700;color:#fff;letter-spacing:3px;font-family:Arial,sans-serif;">MODULE  ARRAY</div>
+      <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:1.5px;font-family:'Malgun Gothic',Arial,sans-serif;">${data.projectName ? data.projectName + " 태양광발전소" : "태양광발전소"}&nbsp;&nbsp;MODULE ARRAY</div>
       ${data.location ? `<div style="font-size:10px;color:rgba(255,255,255,0.70);margin-top:3px;letter-spacing:0.5px;">${data.location}</div>` : ""}
     </div>
     <!-- Capacity badge -->
@@ -221,7 +214,7 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   </div>
 
   <!-- ── MAP AREA ── -->
-  <div style="position:absolute;left:${mapLeft}px;top:${mapTop}px;width:${mapW}px;height:${mapH}px;overflow:hidden;background:#1a2232;display:flex;align-items:center;justify-content:center;">
+  <div style="position:absolute;left:${mapLeft}px;top:${mapTop}px;width:${mapW}px;height:${mapH}px;overflow:hidden;background:#ffffff;display:flex;align-items:center;justify-content:center;">
     ${data.mapImageDataUrl
       ? `<img src="${data.mapImageDataUrl}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto;position:absolute;inset:0;" />`
       : `<div style="width:100%;height:100%;background:#e8edf2;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:18px;">지도 이미지</div>`
@@ -236,11 +229,11 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   <!-- ── RIGHT PANEL ── -->
   <div style="position:absolute;left:${rpLeft}px;top:${rpTop}px;width:${RIGHT_W}px;height:${rpH}px;overflow:hidden;display:flex;flex-direction:column;">
 
-    <!-- 발전용량 섹션 -->
+    <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
       <div style="background:${NAVY};color:#fff;padding:0 14px;height:32px;display:flex;align-items:center;gap:8px;">
         <div style="width:3px;height:14px;background:#7dd3fc;border-radius:2px;"></div>
-        <span style="font-size:15px;font-weight:700;letter-spacing:1.5px;">발전용량</span>
+        <span style="font-size:15px;font-weight:700;letter-spacing:1.5px;">태양광발전소 사업개요</span>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -255,27 +248,41 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
     <!-- Spacer -->
     <div style="flex:1;"></div>
 
-    <!-- ── TITLE BLOCK ── -->
+    <!-- ── COMPANY INFO BLOCK ── -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
-      <!-- Title block header -->
-      <div style="background:${NAVY};padding:0 14px;height:34px;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:15px;font-weight:700;color:#fff;letter-spacing:2px;font-family:Arial,sans-serif;">DRAWING INFO</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.5);letter-spacing:1px;">태양광 자동 용량계산</div>
-      </div>
-      <!-- Divider with logo -->
-      <div style="height:48px;display:flex;align-items:center;border-bottom:1px solid ${BORDER};background:#fff;">
-        <div style="flex:1;display:flex;align-items:center;justify-content:center;">
-          ${logoHtmlLight}
-        </div>
-        <div style="width:1px;height:32px;background:${BORDER};"></div>
-        <div style="flex:2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
-          <div style="font-size:16px;font-weight:900;letter-spacing:4px;color:${NAVY};font-family:Arial,sans-serif;">MODULE ARRAY</div>
-          <div style="font-size:11px;color:${MUTED};letter-spacing:1px;">SOLAR PV INSTALLATION PLAN</div>
+      <!-- Company header -->
+      <div style="background:${NAVY};padding:0 14px;height:52px;display:flex;align-items:center;gap:12px;">
+        <div style="flex-shrink:0;">${logoHtmlDark}</div>
+        <div style="width:1px;height:36px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
+        <div>
+          <div style="font-size:20px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;">TNE</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.65);letter-spacing:0.5px;margin-top:2px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
-      <!-- Meta rows -->
-      <div style="border-top:1px solid ${BORDER};">
-        ${metaHtml}
+      <!-- Contact grid -->
+      <div>
+        <div style="display:flex;border-bottom:1px solid ${BORDER};height:23px;">
+          <div style="width:64px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:11px;color:${TEXT};">055 291 5567</div>
+          <div style="width:44px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 6px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:11px;color:${TEXT};">055 291 5568</div>
+        </div>
+        <div style="display:flex;border-bottom:1px solid ${BORDER};height:23px;">
+          <div style="width:64px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">Mobile</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:11px;color:${TEXT};">010 9165 1041</div>
+        </div>
+        <div style="display:flex;border-bottom:1px solid ${BORDER};height:23px;">
+          <div style="width:64px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:11px;color:${TEXT};">tnekbt1041@naver.com</div>
+        </div>
+        <div style="display:flex;border-bottom:1px solid ${BORDER};height:23px;">
+          <div style="width:64px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:11px;color:${TEXT};">www.tneepc.com</div>
+        </div>
+        <div style="display:flex;height:23px;">
+          <div style="width:64px;flex-shrink:0;border-right:1px solid ${BORDER};display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
+          <div style="flex:1;display:flex;align-items:center;padding:0 8px;font-size:10px;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
+        </div>
       </div>
     </div>
 

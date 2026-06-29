@@ -55,6 +55,8 @@ export default function LayoutPage() {
     prevInclusionCountRef.current = Math.max(0, prevInclusionCountRef.current - 1);
   }, []);
 
+  const [detectedLocation, setDetectedLocation] = useState<string>("");
+
   const handleLoadProject = useCallback(({ moduleConfig: mc, zoneLabels: zl }: { moduleConfig: ModuleConfig; zoneLabels: string[] }) => {
     setModuleConfig(mc);
     setZoneLabels(zl);
@@ -108,6 +110,7 @@ export default function LayoutPage() {
               onAreasChange={setPolygons}
               moduleConfig={moduleConfig}
               onModuleCountsChange={setModuleCounts}
+              onLocationDetected={setDetectedLocation}
             />
           </div>
         </div>
@@ -123,6 +126,7 @@ export default function LayoutPage() {
             onZoneAngleChange={handleZoneAngleChange}
             onZoneRemove={handleZoneRemove}
             onLoadProject={handleLoadProject}
+            externalLocation={detectedLocation}
           />
         </div>
       </main>

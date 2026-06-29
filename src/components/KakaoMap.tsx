@@ -41,6 +41,7 @@ interface KakaoMapProps {
   onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]) => void;
   moduleConfig?: ModuleConfig;
   onModuleCountsChange?: (counts: number[]) => void;
+  onLocationDetected?: (address: string) => void;
 }
 
 const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
@@ -145,6 +146,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   onAreasChange,
   moduleConfig,
   onModuleCountsChange = () => {},
+  onLocationDetected,
 }: KakaoMapProps, ref) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -222,8 +224,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderModulesRef = useRef<any>(null);
   const zoneAdjustsRef = useRef<ZoneAdjust[]>([]);
+  const onLocationDetectedRef = useRef(onLocationDetected);
+  const [isDragMode, setIsDragMode] = useState(false);
+  const isDragModeRef = useRef(false);
 
   useEffect(() => { onModuleCountsChangeRef.current = onModuleCountsChange; }, [onModuleCountsChange]);
+  useEffect(() => { onLocationDetectedRef.current = onLocationDetected; }, [onLocationDetected]);
 
   const renderModules = useCallback(() => {
     const config = moduleConfigRef.current;
@@ -336,6 +342,49 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     renderDebounceRef.current = setTimeout(renderModules, 150);
   }, [renderModules]);
 
+  // Attach drag-to-move behavior to an inclusion polygon
+  const addDragBehavior = useCallback((polygon: any) => {
+    polygon.on('mousedown', function(e: any) {
+      if (!isDragModeRef.current) return;
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (!map || !L) return;
+      const zoneIndex = polygonsRef.current.findIndex(p => p.leafletPolygon === polygon);
+      if (zoneIndex === -1) return;
+      L.DomEvent.stopPropagation(e);
+      const startLat = e.latlng.lat, startLng = e.latlng.lng;
+      const startCoords = polygonsRef.current[zoneIndex].coords.map((c: Coord) => ({ ...c }));
+      map.getContainer().style.cursor = 'grabbing';
+
+      const mmHandler = (me: any) => {
+        const polyData = polygonsRef.current[zoneIndex];
+        if (!polyData) return;
+        const dlat = me.latlng.lat - startLat;
+        const dlng = me.latlng.lng - startLng;
+        const newCoords = startCoords.map((c: Coord) => ({ lat: c.lat + dlat, lng: c.lng + dlng }));
+        polyData.coords = newCoords;
+        polygon.setLatLngs(newCoords.map((c: Coord) => [c.lat, c.lng]));
+        const nwLat = Math.max(...newCoords.map((c: Coord) => c.lat));
+        const nwLng = Math.min(...newCoords.map((c: Coord) => c.lng));
+        polyData.labelMarker.setLatLng([nwLat, nwLng]);
+      };
+
+      const muHandler = () => {
+        map.off('mousemove', mmHandler);
+        map.off('mouseup', muHandler);
+        map.getContainer().style.cursor = isDragModeRef.current ? 'default' : '';
+        const polyData = polygonsRef.current[zoneIndex];
+        if (polyData) {
+          polyData.area = calculateArea(polyData.coords);
+          notifyAreasRef.current?.();
+        }
+      };
+
+      map.on('mousemove', mmHandler);
+      map.on('mouseup', muHandler);
+    });
+  }, []);
+
   useEffect(() => {
     moduleConfigRef.current = moduleConfig;
     scheduleRenderModules();
@@ -417,8 +466,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             `<div style="min-width:180px;line-height:1.5">` +
             (road ? `<div style="font-size:13px;font-weight:600">${road}</div>` : "") +
             (addr ? `<div style="font-size:11px;color:#666;margin-top:2px">${addr}</div>` : "") +
-            `<div style="font-size:10px;color:#aaa;margin-top:4px">${lat.toFixed(6)}, ${lng.toFixed(6)}</div></div>`
+            `<div style="font-size:10px;color:#aaa;margin-top:4px">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>` +
+            `<div style="font-size:10px;color:#805ad5;margin-top:4px;cursor:pointer;font-weight:600;" onclick="window.__useAsLocation && window.__useAsLocation('${(road || addr || "").replace(/'/g, "\\'")}')">📍 설치 위치로 사용</div></div>`
           );
+          // Auto-fill location
+          onLocationDetectedRef.current?.(road || addr || "");
         } else {
           marker.setPopupContent(`<div>주소를 찾을 수 없습니다<br/><span style="font-size:10px;color:#aaa">${lat.toFixed(6)}, ${lng.toFixed(6)}</span></div>`);
         }
@@ -592,11 +644,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         });
         const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
         polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: detectPolygonAngle(coords), label }];
+        addDragBehavior(polygon);
         setPolygonCount(polygonsRef.current.length);
       }
       notifyAreas();
     });
-  }, [notifyAreas]);
+  }, [notifyAreas, addDragBehavior]);
 
   // --- Rectangle drawing (3 clicks: P1 corner → P2 edge → P3 width) ---
   const startDrawingRect = useCallback((mode: 'inclusion' | 'exclusion' = 'inclusion') => {
@@ -701,6 +754,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             });
             const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
             polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: edgeAngle(p1, p2), label }];
+            addDragBehavior(polygon);
             setPolygonCount(polygonsRef.current.length);
           }
           notifyAreas();
@@ -709,7 +763,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       map.on("click", handler);
       clickHandlerRef.current = handler;
     });
-  }, [cancelCurrentDrawing, notifyAreas]);
+  }, [cancelCurrentDrawing, notifyAreas, addDragBehavior]);
 
   const goToLocation = useCallback(async (result: SearchResult) => {
     const map = mapInstanceRef.current;
@@ -807,6 +861,22 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     setExclusionCount(exclusionPolygonsRef.current.length);
     notifyAreas();
   }, [notifyAreas]);
+
+  const stopDragMode = useCallback(() => {
+    setIsDragMode(false);
+    isDragModeRef.current = false;
+    const map = mapInstanceRef.current;
+    if (map) map.getContainer().style.cursor = '';
+  }, []);
+
+  const startDragMode = useCallback(() => {
+    cancelCurrentDrawing();
+    stopLocating();
+    setIsDragMode(true);
+    isDragModeRef.current = true;
+    const map = mapInstanceRef.current;
+    if (map) map.getContainer().style.cursor = 'default';
+  }, [cancelCurrentDrawing, stopLocating]);
 
   const isAnyDrawing = isDrawing || isRectDrawing;
 
@@ -1013,6 +1083,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           });
           const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
           polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords: saved.coords, angle: saved.angle, label: saved.label }];
+          addDragBehavior(polygon);
           setPolygonCount(polygonsRef.current.length);
         }
       });
@@ -1027,7 +1098,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       notifyAreasRef.current?.();
     },
-  }), []);
+  }), [addDragBehavior]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -1074,7 +1145,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       {/* 그리기 도구 */}
       <div className="flex gap-2 p-2 bg-white border-b items-center flex-shrink-0 flex-wrap">
-        {!isAnyDrawing && !isPrintAreaMode ? (
+        {!isAnyDrawing && !isPrintAreaMode && !isDragMode ? (
           <>
             <button onClick={() => startDrawing('inclusion')}
               className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium">
@@ -1088,6 +1159,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
               className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium">
               제외 영역
             </button>
+            {polygonCount > 0 && (
+              <button onClick={() => startDragMode()}
+                className="px-3 py-2 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm font-medium">
+                구역 이동
+              </button>
+            )}
             {polygonCount > 0 && (
               <button onClick={removeLastPolygon}
                 className="px-3 py-2 bg-orange-400 text-white rounded hover:bg-orange-500 text-sm">
@@ -1136,6 +1213,14 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
                 {exclusionCount > 0 && <span className="text-red-500">제외 {exclusionCount}개</span>}
               </span>
             )}
+          </>
+        ) : isDragMode ? (
+          <>
+            <button onClick={stopDragMode}
+              className="px-3 py-2 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm font-medium">
+              이동 완료
+            </button>
+            <span className="text-xs text-amber-600 font-medium">구역을 클릭+드래그하여 이동하세요</span>
           </>
         ) : isPrintAreaMode ? (
           <>
