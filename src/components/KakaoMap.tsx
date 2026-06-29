@@ -74,7 +74,7 @@ function detectPolygonAngle(coords: Coord[]): number {
   }
   while (bestAngle > 90) bestAngle -= 180;
   while (bestAngle < -90) bestAngle += 180;
-  return Math.round(bestAngle);
+  return Math.round(bestAngle * 100) / 100;
 }
 
 // Angle of edge P1→P2 normalized to -90~90°
@@ -85,7 +85,7 @@ function edgeAngle(p1: [number, number], p2: [number, number]): number {
   let angle = Math.atan2(dy, dx) * 180 / Math.PI;
   while (angle > 90) angle -= 180;
   while (angle < -90) angle += 180;
-  return Math.round(angle);
+  return Math.round(angle * 100) / 100;
 }
 
 // Compute 4 rectangle corners: P1,P2 define one edge; P3 defines width

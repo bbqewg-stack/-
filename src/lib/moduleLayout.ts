@@ -104,8 +104,18 @@ export function calculateModuleLayout(
 
   const result: Coord[][] = [];
 
-  for (let y = minY; y + mH <= maxY + 1e-6; y += rowStep) {
-    for (let x = minX; x + mW <= maxX + 1e-6; x += colStep) {
+  // Center the grid so leftover space is split evenly on both sides
+  const numCols = Math.floor((maxX - minX + 1e-6) / colStep);
+  const numRows = Math.floor((maxY - minY + 1e-6) / rowStep);
+  const offsetX = ((maxX - minX) - (numCols * colStep - config.colSpacing / 1000)) / 2;
+  const offsetY = ((maxY - minY) - (numRows * rowStep - config.rowSpacing / 1000)) / 2;
+  const startX = minX + offsetX;
+  const startY = minY + offsetY;
+
+  for (let row = 0; row < numRows; row++) {
+    const y = startY + row * rowStep;
+    for (let col = 0; col < numCols; col++) {
+      const x = startX + col * colStep;
       const corners = [
         { x, y }, { x: x + mW, y }, { x: x + mW, y: y + mH }, { x, y: y + mH },
       ];
