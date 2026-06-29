@@ -16,6 +16,9 @@ export interface PdfReportData {
   moduleWidth: number;
   moduleHeight: number;
   moduleWattage: number;
+  moduleMaker: string;
+  modulesPerString: number;
+  totalStrings: number;
   rowSpacing: number;
   colSpacing: number;
   location: string;
@@ -33,6 +36,40 @@ function northArrowSvg(): string {
   <polygon points="32,61 25,40 39,40" fill="white" stroke="#cc0000" stroke-width="1"/>
   <text x="32" y="11" text-anchor="middle" font-size="13" font-weight="bold" fill="#cc0000" font-family="Arial,sans-serif">N</text>
 </svg>`;
+}
+
+/** 50kW, 60kW, 125kW 인버터 조합으로 시스템 용량을 최소 초과로 커버하는 최적 조합 계산 */
+function calcInverters(totalKw: number): string {
+  if (totalKw <= 0) return "-";
+
+  let best: { n125: number; n60: number; n50: number } | null = null;
+  let bestScore = Infinity;
+
+  const max125 = Math.ceil(totalKw / 125) + 1;
+  for (let n125 = 0; n125 <= max125; n125++) {
+    const rem1 = totalKw - n125 * 125;
+    const max60 = Math.ceil(Math.max(0, rem1) / 60) + 1;
+    for (let n60 = 0; n60 <= max60; n60++) {
+      const rem2 = rem1 - n60 * 60;
+      const n50 = rem2 > 0 ? Math.ceil(rem2 / 50) : 0;
+      const total = n125 * 125 + n60 * 60 + n50 * 50;
+      const excess = total - totalKw;
+      if (excess < 0) continue;
+      // 초과 용량 최소화 우선, 동률이면 대수 최소화
+      const score = excess * 100 + (n125 + n60 + n50);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { n125, n60, n50 };
+      }
+    }
+  }
+
+  if (!best) return "-";
+  const parts: string[] = [];
+  if (best.n125 > 0) parts.push(`125kW = ${best.n125}대`);
+  if (best.n60 > 0) parts.push(`60kW = ${best.n60}대`);
+  if (best.n50 > 0) parts.push(`50kW = ${best.n50}대`);
+  return parts.join(" / ") || "-";
 }
 
 function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
@@ -65,16 +102,29 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   const TEXT = "#1a1e2e";
   const MUTED = "#6b7a99";
 
+  // 모듈 규격 표시: 메이커명 포함 (예: TRINA 730W : 1303×2384 ㎜)
+  const moduleSpecText = data.moduleMaker
+    ? `${data.moduleMaker} : ${data.moduleWidth}×${data.moduleHeight} ㎜`
+    : `${data.moduleWattage}W : ${data.moduleWidth}×${data.moduleHeight} ㎜`;
+
+  // 모듈 구성: 직병렬 수식 (예: 15직렬 × 10병렬 = 150장 × 730W = 109.5kW)
+  const moduleConfigText = (data.modulesPerString > 0 && data.totalStrings > 0)
+    ? `${data.modulesPerString}직렬 × ${data.totalStrings}병렬 = ${data.totalModules.toLocaleString("ko")}장 × ${data.moduleWattage}W = ${formatKw(data.totalCapacityKw)}`
+    : `${data.totalModules.toLocaleString("ko")}장`;
+
+  // 인버터 구성 자동계산
+  const inverterText = calcInverters(data.totalCapacityKw);
+
   // ── Capacity table ──
   const capRows = [
     ["총 발전용량",  `<b style="font-size:15px;color:${ACCENT}">${formatKw(data.totalCapacityKw)}</b>`],
-    ["모듈 규격",    `${data.moduleWidth}×${data.moduleHeight} ㎜ / ${data.moduleWattage}W`],
+    ["모듈 규격",    moduleSpecText],
     ["모듈 총 수량", `${data.totalModules.toLocaleString("ko")} 장`],
-    ["모듈 구성",    zones.map(z => `${z.label}: ${z.moduleCount.toLocaleString("ko")}장`).join(" &nbsp;|&nbsp; ") || "-"],
+    ["모듈 구성",    moduleConfigText],
     ["모듈 각도",    zones.map(z => `${z.label} ${z.angle.toFixed(1)}°`).join(" &nbsp;|&nbsp; ") || "-"],
-    ["인버터 구성",  "&nbsp;"],
+    ["인버터 구성",  inverterText],
   ];
-  const capRowH = Math.floor((infoH * 0.50 - 36) / capRows.length);
+  const capRowH = Math.floor((infoH * 0.65 - 36) / capRows.length);
   const LW = 128;
 
   const capRowsHtml = capRows.map(([lbl, val], idx) => `
@@ -86,19 +136,6 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
       </div>
       <div style="flex:1;display:flex;align-items:center;padding:0 12px;font-size:12.5px;color:${TEXT};line-height:1.4;word-break:break-all;">
         ${val}
-      </div>
-    </div>`).join("");
-
-  // ── Zone cards ──
-  const zoneCardH = Math.floor((infoH * 0.50 - 44) / Math.max(zones.length, 1));
-  const zoneCardsHtml = zones.map(z => `
-    <div style="display:flex;align-items:center;height:${zoneCardH}px;border-bottom:1px solid ${BORDER};">
-      <div style="width:4px;flex-shrink:0;align-self:stretch;background:${z.color};"></div>
-      <div style="width:72px;flex-shrink:0;padding:0 10px;font-size:13px;font-weight:700;color:${TEXT};">${z.label}</div>
-      <div style="flex:1;display:flex;align-items:center;gap:16px;padding:0 8px;font-size:11.5px;color:${MUTED};">
-        <span><b style="color:${TEXT}">${z.moduleCount.toLocaleString("ko")}</b> 장</span>
-        <span><b style="color:${ACCENT}">${formatKw(z.capacityKw)}</b></span>
-        <span>각도 <b style="color:${TEXT}">${z.angle.toFixed(1)}°</b></span>
       </div>
     </div>`).join("");
 
@@ -135,17 +172,17 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
       </div>
     </div>`).join("");
 
-  const logoHtml = logoDataUrl
+  // 헤더용 로고 (어두운 배경 → 흰 배경 박스로 감쌈)
+  const logoHtmlDark = logoDataUrl
+    ? `<div style="background:#fff;border-radius:4px;padding:3px 8px;display:inline-flex;align-items:center;">
+         <img src="${logoDataUrl}" style="max-height:36px;max-width:120px;object-fit:contain;" />
+       </div>`
+    : `<div style="font-size:18px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:2px;">TNE</div>`;
+
+  // 타이틀 블록용 로고 (밝은 배경 → 그대로)
+  const logoHtmlLight = logoDataUrl
     ? `<img src="${logoDataUrl}" style="max-height:40px;max-width:130px;object-fit:contain;" />`
     : `<div style="font-size:18px;font-weight:900;color:${ACCENT};font-family:Arial,sans-serif;letter-spacing:2px;">TNE</div>`;
-
-  // ── Map legend ──
-  const legendHtml = zones.map(z => `
-    <div style="display:flex;align-items:center;gap:7px;padding:4px 10px;font-size:12px;font-weight:600;
-                background:rgba(255,255,255,0.92);border-radius:2px;margin-bottom:3px;color:#111;
-                border-left:4px solid ${z.color};box-shadow:0 1px 3px rgba(0,0,0,0.15);">
-      ${z.label}: ${formatKw(z.capacityKw)} (${z.moduleCount.toLocaleString("ko")}장)
-    </div>`).join("");
 
   return `<!DOCTYPE html>
 <html>
@@ -166,14 +203,15 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   <div style="position:absolute;left:${MARGIN}px;top:${MARGIN}px;width:${PW - MARGIN * 2}px;height:${HDR_H}px;
               background:linear-gradient(135deg,${NAVY} 0%,${NAVY2} 100%);
               display:flex;align-items:center;padding:0 24px;gap:20px;">
-    <!-- Logo -->
-    <div style="flex-shrink:0;height:44px;display:flex;align-items:center;">${logoHtml}</div>
+    <!-- Logo (흰 배경 박스로 감싸 네이비 배경 대비 확보) -->
+    <div style="flex-shrink:0;height:44px;display:flex;align-items:center;">${logoHtmlDark}</div>
     <!-- Vertical divider -->
     <div style="width:1px;height:36px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
-    <!-- Title -->
+    <!-- Title + 설치위치 -->
     <div style="flex:1;">
       <div style="font-size:9px;font-weight:500;color:rgba(255,255,255,0.55);letter-spacing:2px;margin-bottom:3px;">SOLAR PV DESIGN</div>
       <div style="font-size:17px;font-weight:700;color:#fff;letter-spacing:3px;font-family:Arial,sans-serif;">MODULE  ARRAY</div>
+      ${data.location ? `<div style="font-size:10px;color:rgba(255,255,255,0.70);margin-top:3px;letter-spacing:0.5px;">${data.location}</div>` : ""}
     </div>
     <!-- Capacity badge -->
     <div style="flex-shrink:0;text-align:right;">
@@ -190,8 +228,6 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
     }
     <!-- North arrow -->
     <div style="position:absolute;top:12px;left:12px;z-index:5;background:rgba(255,255,255,0.9);border-radius:50%;padding:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);">${northArrowSvg()}</div>
-    <!-- Zone legend -->
-    <div style="position:absolute;bottom:14px;left:14px;z-index:5;">${legendHtml}</div>
   </div>
 
   <!-- ── VERTICAL DIVIDER ── -->
@@ -211,18 +247,6 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
       </div>
     </div>
 
-    <!-- 구역별 상세 섹션 -->
-    ${zones.length > 0 ? `
-    <div style="flex-shrink:0;margin-top:10px;">
-      <div style="background:${NAVY};color:#fff;padding:0 14px;height:32px;display:flex;align-items:center;gap:8px;">
-        <div style="width:3px;height:14px;background:#86efac;border-radius:2px;"></div>
-        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;">구역별 상세</span>
-      </div>
-      <div style="border:1px solid ${BORDER};border-top:none;">
-        ${zoneCardsHtml}
-      </div>
-    </div>` : ""}
-
     <!-- 설치위치 -->
     <div style="flex-shrink:0;margin-top:10px;border:1px solid ${BORDER};">
       ${locHtml}
@@ -241,7 +265,7 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
       <!-- Divider with logo -->
       <div style="height:48px;display:flex;align-items:center;border-bottom:1px solid ${BORDER};background:#fff;">
         <div style="flex:1;display:flex;align-items:center;justify-content:center;">
-          ${logoHtml}
+          ${logoHtmlLight}
         </div>
         <div style="width:1px;height:32px;background:${BORDER};"></div>
         <div style="flex:2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
@@ -327,7 +351,6 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
   const html2canvas = (await import("html2canvas")).default;
   const { default: jsPDF } = await import("jspdf");
 
-  // Load company logo
   let logoDataUrl: string | null = null;
   try {
     const res = await fetch("/company-logo.png");
@@ -340,7 +363,6 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
     });
   } catch { /* logo optional */ }
 
-  // Render HTML in a hidden iframe
   const iframe = document.createElement("iframe");
   iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:1680px;height:1188px;border:none;visibility:hidden;";
   document.body.appendChild(iframe);
@@ -351,7 +373,6 @@ export async function generatePdf(data: PdfReportData): Promise<void> {
     iframe.contentDocument!.write(html);
     iframe.contentDocument!.close();
 
-    // Wait for all images to load
     await new Promise<void>(resolve => {
       const imgs = Array.from(iframe.contentDocument!.querySelectorAll("img"));
       if (imgs.length === 0) { resolve(); return; }

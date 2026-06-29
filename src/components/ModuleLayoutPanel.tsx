@@ -67,6 +67,8 @@ export default function ModuleLayoutPanel({
   const [modulesPerString, setModulesPerString] = useState(0);
   const [printState, setPrintState] = useState<'idle' | 'capturing' | 'preview'>('idle');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("태양광 발전소");
+  const [location, setLocation] = useState("");
 
   const inclusions = polygons.filter(p => p.type === 'inclusion');
   const exclusions = polygons.filter(p => p.type === 'exclusion');
@@ -100,6 +102,11 @@ export default function ModuleLayoutPanel({
 
   const buildPdfData = async () => {
     const mapImageDataUrl = await mapRef!.current!.captureMapImage();
+    const selectedPreset = MODULE_PRESETS.find(p =>
+      p.width === moduleConfig.moduleWidth &&
+      p.height === moduleConfig.moduleHeight &&
+      p.wattage === moduleConfig.moduleWattage
+    );
     return {
       mapImageDataUrl,
       zones: inclusions.map((inc, i) => ({
@@ -114,10 +121,13 @@ export default function ModuleLayoutPanel({
       moduleWidth: moduleConfig.moduleWidth,
       moduleHeight: moduleConfig.moduleHeight,
       moduleWattage: moduleConfig.moduleWattage,
+      moduleMaker: selectedPreset?.label ?? "",
+      modulesPerString,
+      totalStrings,
       rowSpacing: moduleConfig.rowSpacing,
       colSpacing: moduleConfig.colSpacing,
-      location: "",
-      projectName: "태양광 발전소",
+      location,
+      projectName,
     };
   };
 
@@ -150,6 +160,31 @@ export default function ModuleLayoutPanel({
 
   return (
     <div className="flex flex-col gap-3 p-4 h-full overflow-y-auto">
+
+      {/* PDF 정보 입력 */}
+      <div className="bg-white border rounded-lg p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-3">PDF 도면 정보</p>
+        <div className="space-y-2.5">
+          <LabelRow label="프로젝트명">
+            <input
+              type="text"
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              placeholder="태양광 발전소"
+              className="text-xs border rounded px-1.5 py-0.5 outline-none focus:border-blue-400 flex-1 min-w-0"
+            />
+          </LabelRow>
+          <LabelRow label="설치 위치">
+            <input
+              type="text"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              placeholder="예) 전남 해남군 산이면 00번지"
+              className="text-xs border rounded px-1.5 py-0.5 outline-none focus:border-blue-400 flex-1 min-w-0"
+            />
+          </LabelRow>
+        </div>
+      </div>
 
       {/* PDF 인쇄 버튼 */}
       {mapRef && totalModules > 0 && (
