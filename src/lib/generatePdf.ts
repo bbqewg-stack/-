@@ -84,7 +84,34 @@ function calcInverters(totalKw: number): string {
   return parts.join(" / ") || "-";
 }
 
-export function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
+export interface TextOverlayItem {
+  id: string;
+  lines: string[];
+  fontSize: number;
+  fontWeight: number;
+  color: string;
+  align: "left" | "right" | "center";
+  fontFamily?: string;
+}
+
+/**
+ * html2canvas의 table-cell/중첩flex/absolute+flex 기반 수직 중앙정렬 모두 격리 테스트에서는
+ * 정상으로 보였지만, 실제 배포 환경(무거운 페이지 + 실행 중인 Leaflet 지도 등)에서 캡처하면
+ * 텍스트가 박스 중심에서 벗어나는 것이 Playwright + 실제 html2canvas 렌더링 + ink-centroid
+ * 픽셀 측정 + 실제 사용자 PDF 파일 직접 측정으로 반복 확인됨 (2026-06-30).
+ * HTML/CSS 자체는 두 실행 컨텍스트에서 동일함을 직접 dump해서 확인했고, getBoundingClientRect로
+ * 읽은 박스 위치/크기는 두 컨텍스트 모두 정확함도 확인함 — 즉 "박스 배치"는 항상 정확하고,
+ * html2canvas가 그 박스 안의 "텍스트"를 그리는 단계에서만 실행 컨텍스트에 따라 다르게 깨짐.
+ *
+ * 해결: 텍스트가 들어갈 자리에는 빈 박스(배경/테두리만 있는 placeholder, id 부여)만 HTML/CSS로
+ * 배치하고, html2canvas가 캡처를 마친 뒤 해당 박스들의 getBoundingClientRect()를 읽어
+ * canvas 2D API(fillText, textBaseline:'middle')로 직접 텍스트를 그린다. 박스 배치(레이아웃)는
+ * 기존처럼 HTML/CSS가 담당하되, 텍스트 렌더링만은 html2canvas를 완전히 우회한다.
+ */
+export function buildHtml(
+  data: PdfReportData,
+  logoDataUrl: string | null
+): { html: string; overlays: TextOverlayItem[] } {
   const PW = 1680, PH = 1188;
   const MARGIN = 20;
   const HDR_H = 68;
@@ -111,15 +138,21 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
   const TEXT = "#0f1520";
   const LBL = "#4a5a78";
 
+  const overlays: TextOverlayItem[] = [];
+  const reg = (item: TextOverlayItem) => { overlays.push(item); return item.id; };
+
   // 모듈 규격
   const moduleSpecText = data.moduleMaker
     ? `${data.moduleMaker} : ${data.moduleWidth}×${data.moduleHeight} ㎜`
     : `${data.moduleWattage}W : ${data.moduleWidth}×${data.moduleHeight} ㎜`;
 
   // 모듈 구성 2줄
-  const moduleConfigText = (data.modulesPerString > 0 && data.totalStrings > 0)
-    ? `${data.modulesPerString}직렬 × ${data.totalStrings}병렬 = ${data.totalModules.toLocaleString("ko")}장 × ${data.moduleWattage}W<br/>= ${formatKw(data.totalCapacityKw)}`
-    : `${data.totalModules.toLocaleString("ko")}장`;
+  const moduleConfigLines = (data.modulesPerString > 0 && data.totalStrings > 0)
+    ? [
+        `${data.modulesPerString}직렬 × ${data.totalStrings}병렬 = ${data.totalModules.toLocaleString("ko")}장 × ${data.moduleWattage}W`,
+        `= ${formatKw(data.totalCapacityKw)}`,
+      ]
+    : [`${data.totalModules.toLocaleString("ko")}장`];
 
   const inverterText = calcInverters(data.totalCapacityKw);
 
@@ -130,33 +163,36 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
     : `최소 ${Math.min(...angles).toFixed(1)}° / 최대 ${Math.max(...angles).toFixed(1)}°`;
 
   // ── Capacity table (프로젝트명·설치위치 포함) ──
-  const capRows: [string, string][] = [
-    ["프로젝트명",   data.projectName || "태양광 발전소"],
-    ["설치 위치",    data.location || "-"],
-    ["총 발전용량",  `<b style="font-size:22px;font-weight:900;color:${ACCENT};">${formatKw(data.totalCapacityKw)}</b>`],
-    ["모듈 규격",    moduleSpecText],
-    ["모듈 총 수량", `${data.totalModules.toLocaleString("ko")} 장`],
-    ["모듈 구성",    moduleConfigText],
-    ["모듈 방위각",  angleText],
-    ["인버터 구성",  inverterText],
+  const capRows: { label: string; lines: string[]; big?: boolean }[] = [
+    { label: "프로젝트명",   lines: [data.projectName || "태양광 발전소"] },
+    { label: "설치 위치",    lines: [data.location || "-"] },
+    { label: "총 발전용량",  lines: [formatKw(data.totalCapacityKw)], big: true },
+    { label: "모듈 규격",    lines: [moduleSpecText] },
+    { label: "모듈 총 수량", lines: [`${data.totalModules.toLocaleString("ko")} 장`] },
+    { label: "모듈 구성",    lines: moduleConfigLines },
+    { label: "모듈 방위각",  lines: [angleText] },
+    { label: "인버터 구성",  lines: [inverterText] },
   ];
 
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
   const LW = 138;
 
-  // display:table + table-cell;vertical-align:middle 사용.
-  // 행(outer) - 셀(inner) 2단 중첩 flex(outer flex row + inner flex cell)는 html2canvas에서
-  // outer row의 기본 align-items:stretch가 제대로 적용되지 않아 inner cell이 row 전체 높이로
-  // 늘어나지 않고, 그 결과 inner의 align-items:center가 작은 content-box 안에서만 중앙정렬되어
-  // 텍스트가 박스 하단으로 쏠리는 문제가 실측(ink-centroid 픽셀 측정)으로 확인됨.
-  // table-cell은 이 stretch 의존성 자체가 없어 행 전체 높이 기준으로 항상 정확히 중앙정렬됨.
-  const capRowsHtml = capRows.map(([lbl, val], idx) => {
-    const isMultiLine = val.includes('<br/>');
+  const capRowsHtml = capRows.map((row, idx) => {
+    const labelId = `ov-cap-label-${idx}`;
+    const valueId = `ov-cap-value-${idx}`;
+    reg({ id: labelId, lines: [row.label], fontSize: 15, fontWeight: 700, color: LBL, align: "left" });
+    reg({
+      id: valueId,
+      lines: row.lines,
+      fontSize: row.big ? 22 : 16,
+      fontWeight: row.big ? 900 : 600,
+      color: row.big ? ACCENT : TEXT,
+      align: "left",
+    });
     return `
-    <div style="display:table;width:100%;height:${capRowH}px;box-sizing:border-box;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
-      <div style="display:table-cell;vertical-align:middle;width:${LW}px;border-right:1px solid ${BORDER};
-                  padding:0 10px;box-sizing:border-box;font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">${lbl}</div>
-      <div style="display:table-cell;vertical-align:middle;padding:${isMultiLine ? "8px" : "0"} 12px;box-sizing:border-box;${isMultiLine ? "line-height:1.55;" : ""}font-size:16px;font-weight:600;color:${TEXT};">${val}</div>
+    <div style="position:relative;width:100%;height:${capRowH}px;box-sizing:border-box;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
+      <div id="${labelId}" style="position:absolute;left:0;top:0;bottom:0;width:${LW}px;border-right:1px solid ${BORDER};padding:0 10px;box-sizing:border-box;overflow:hidden;"></div>
+      <div id="${valueId}" style="position:absolute;left:${LW}px;top:0;bottom:0;right:0;padding:0 12px;box-sizing:border-box;"></div>
     </div>`;
   }).join("");
 
@@ -172,7 +208,52 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
     ? `<img src="${logoDataUrl}" style="max-height:52px;max-width:150px;object-fit:contain;background:#fff;border-radius:4px;padding:4px 8px;" />`
     : `<div style="font-size:22px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;">TNE</div>`;
 
-  return `<!DOCTYPE html>
+  // 상단 헤더바 텍스트
+  reg({ id: "ov-hdr-title", lines: [`${data.projectName ? data.projectName + " 태양광발전소" : "태양광발전소"}  MODULE ARRAY`], fontSize: 19, fontWeight: 800, color: "#fff", align: "left" });
+  if (data.location) {
+    reg({ id: "ov-hdr-loc", lines: [data.location], fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.80)", align: "left" });
+  }
+  reg({ id: "ov-hdr-kwlabel", lines: ["총 발전용량"], fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.60)", align: "right" });
+  reg({ id: "ov-hdr-kwvalue", lines: [formatKw(data.totalCapacityKw)], fontSize: 26, fontWeight: 900, color: "#7dd3fc", align: "right", fontFamily: "Arial,sans-serif" });
+
+  // 사업개요 타이틀
+  reg({ id: "ov-section-title", lines: ["태양광발전소 사업개요"], fontSize: 20, fontWeight: 700, color: "#fff", align: "left" });
+
+  // 회사 헤더 텍스트
+  reg({ id: "ov-co-title", lines: ["태양광 시공 전문기업"], fontSize: 19, fontWeight: 700, color: "#fff", align: "left" });
+  reg({ id: "ov-co-subtitle", lines: ["Tech & Engineering Corporation"], fontSize: 11, fontWeight: 400, color: "rgba(255,255,255,0.70)", align: "left" });
+
+  // 연락처 행
+  const simpleContactRow = (idPrefix: string, lbl: string, val: string, withBorder: boolean, fontSize = 13) => {
+    reg({ id: `ov-${idPrefix}-label`, lines: [lbl], fontSize: 13, fontWeight: 700, color: ACCENT, align: "left" });
+    reg({ id: `ov-${idPrefix}-value`, lines: [val], fontSize, fontWeight: 500, color: TEXT, align: "left" });
+    return `<div style="position:relative;width:100%;height:28px;box-sizing:border-box;${withBorder ? `border-bottom:1px solid ${BORDER};` : ""}">
+      <div id="ov-${idPrefix}-label" style="position:absolute;left:0;top:0;bottom:0;width:70px;padding:0 10px;box-sizing:border-box;background:${STRIPE};border-right:1px solid ${BORDER};"></div>
+      <div id="ov-${idPrefix}-value" style="position:absolute;left:70px;top:0;bottom:0;right:0;padding:0 10px;box-sizing:border-box;"></div>
+    </div>`;
+  };
+
+  const telFaxRowHtml = (() => {
+    const posCell = (id: string, text: string, isLabel: boolean, left: string, width: string, opts: { borderLeft?: boolean } = {}) => {
+      reg({ id, lines: [text], fontSize: 13, fontWeight: isLabel ? 700 : 500, color: isLabel ? ACCENT : TEXT, align: "left" });
+      return `<div id="${id}" style="position:absolute;left:${left};top:0;bottom:0;width:${width};padding:0 10px;box-sizing:border-box;${isLabel ? `background:${STRIPE};` : ""}${opts.borderLeft ? `border-left:1px solid ${BORDER};` : ""}border-right:${isLabel ? `1px solid ${BORDER}` : "none"};"></div>`;
+    };
+    const half = (idPrefix: string, lbl: string, labelW: number, val: string, leftPct: string, borderLeft: boolean) =>
+      posCell(`ov-${idPrefix}-label`, lbl, true, leftPct, `${labelW}px`, { borderLeft }) +
+      posCell(`ov-${idPrefix}-value`, val, false, `calc(${leftPct} + ${labelW}px)`, `calc(50% - ${labelW}px)`);
+    return `<div style="position:relative;width:100%;height:28px;box-sizing:border-box;border-bottom:1px solid ${BORDER};">
+      ${half("tel", "Tel", 70, "055 291 5567", "0%", false)}${half("fax", "Fax", 48, "055 291 5568", "50%", true)}
+    </div>`;
+  })();
+
+  const contactRowsHtmlFinal = [
+    telFaxRowHtml,
+    simpleContactRow("email", "E-mail", "tnekbt1041@naver.com", true),
+    simpleContactRow("web", "Web", "www.tneepc.com", true),
+    simpleContactRow("addr", "주소", "경남 창원시 의창구 동읍 신촌본포로426 1동", false, 12),
+  ].join("");
+
+  const html = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -194,12 +275,12 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
     <div style="flex-shrink:0;display:flex;align-items:center;">${logoHtmlHeader}</div>
     <div style="width:1px;height:44px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
     <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;">
-      <div style="font-size:19px;font-weight:800;color:#fff;letter-spacing:1.5px;line-height:1.2;">${data.projectName ? data.projectName + " 태양광발전소" : "태양광발전소"}&nbsp;&nbsp;MODULE ARRAY</div>
-      ${data.location ? `<div style="font-size:13px;font-weight:500;color:rgba(255,255,255,0.80);letter-spacing:0.5px;line-height:1.2;">${data.location}</div>` : ""}
+      <div id="ov-hdr-title" style="height:23px;"></div>
+      ${data.location ? `<div id="ov-hdr-loc" style="height:16px;"></div>` : ""}
     </div>
     <div style="flex-shrink:0;text-align:right;">
-      <div style="font-size:10px;color:rgba(255,255,255,0.60);letter-spacing:1px;margin-bottom:3px;">총 발전용량</div>
-      <div style="font-size:26px;font-weight:900;color:#7dd3fc;font-family:Arial,sans-serif;letter-spacing:1px;">${formatKw(data.totalCapacityKw)}</div>
+      <div id="ov-hdr-kwlabel" style="height:13px;margin-bottom:3px;"></div>
+      <div id="ov-hdr-kwvalue" style="height:30px;"></div>
     </div>
   </div>
 
@@ -223,7 +304,7 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
     <div style="flex-shrink:0;">
       <div style="display:flex;align-items:center;background:${NAVY};color:#fff;height:40px;padding:0 14px;overflow:hidden;white-space:nowrap;box-sizing:border-box;">
         <div style="flex-shrink:0;width:4px;height:19px;background:#7dd3fc;border-radius:2px;margin-right:9px;"></div>
-        <div style="font-size:20px;font-weight:700;letter-spacing:1.5px;">태양광발전소 사업개요</div>
+        <div id="ov-section-title" style="flex:1;height:24px;"></div>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -235,38 +316,15 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
 
     <!-- COMPANY INFO BLOCK -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
-      <!-- Company header: 단일 레벨 flex + align-items:center -->
       <div style="display:flex;align-items:center;background:${NAVY};height:60px;padding:0 16px;box-sizing:border-box;">
         <div style="flex-shrink:0;display:flex;align-items:center;padding-right:14px;">${logoHtmlCompany}</div>
         <div style="flex-shrink:0;width:1px;height:44px;background:rgba(255,255,255,0.25);"></div>
         <div style="flex-shrink:0;padding-left:14px;display:flex;flex-direction:column;justify-content:center;">
-          <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:0.5px;line-height:1.3;">태양광 시공 전문기업</div>
-          <div style="font-size:11px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:4px;">Tech &amp; Engineering Corporation</div>
+          <div id="ov-co-title" style="height:24px;"></div>
+          <div id="ov-co-subtitle" style="height:14px;margin-top:4px;"></div>
         </div>
       </div>
-      <!-- Contact rows: display:table + table-cell;vertical-align:middle (중첩 flex stretch 버그 회피,
-           자세한 이유는 capRowsHtml 주석 참조) -->
-      ${(() => {
-        const cellBase = `display:table-cell;vertical-align:middle;padding:0 10px;box-sizing:border-box;`;
-        const labelCell = (txt: string, w: number) =>
-          `<div style="${cellBase}width:${w}px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">${txt}</div>`;
-        const valueCell = (txt: string, fontSize = 13) =>
-          `<div style="${cellBase}font-size:${fontSize}px;font-weight:500;color:${TEXT};">${txt}</div>`;
-        const row = (inner: string, withBorder: boolean) =>
-          `<div style="display:table;width:100%;height:28px;table-layout:fixed;${withBorder ? `border-bottom:1px solid ${BORDER};` : ""}">${inner}</div>`;
-
-        return [
-          row(
-            labelCell("Tel", 70) + valueCell("055 291 5567") +
-            `<div style="${cellBase}width:48px;flex-shrink:0;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};">Fax</div>` +
-            valueCell("055 291 5568"),
-            true
-          ),
-          row(labelCell("E-mail", 70) + valueCell("tnekbt1041@naver.com"), true),
-          row(labelCell("Web", 70) + valueCell("www.tneepc.com"), true),
-          row(labelCell("주소", 70) + valueCell("경남 창원시 의창구 동읍 신촌본포로426 1동", 12), false),
-        ].join("");
-      })()}
+      ${contactRowsHtmlFinal}
     </div>
 
   </div>
@@ -274,6 +332,8 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
 </div>
 </body>
 </html>`;
+
+  return { html, overlays };
 }
 
 /** Renders the template to a canvas and returns a data URL for preview */
@@ -298,9 +358,12 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
   iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:1680px;height:1188px;border:none;visibility:hidden;";
   document.body.appendChild(iframe);
 
+  const SCALE = 2;
+
   try {
+    const { html, overlays } = buildHtml(data, logoDataUrl);
     iframe.contentDocument!.open();
-    iframe.contentDocument!.write(buildHtml(data, logoDataUrl));
+    iframe.contentDocument!.write(html);
     iframe.contentDocument!.close();
 
     await new Promise<void>(resolve => {
@@ -316,7 +379,7 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
 
     const el = iframe.contentDocument!.getElementById("drawing") as HTMLElement;
     const canvas = await html2canvas(el, {
-      scale: 2,
+      scale: SCALE,
       useCORS: true,
       allowTaint: true,
       logging: false,
@@ -324,7 +387,49 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
       height: 1188,
       backgroundColor: "#ffffff",
     });
-    return canvas.toDataURL("image/jpeg", 0.97);
+
+    // html2canvas의 텍스트 렌더링을 우회: 미리 비워둔 placeholder 박스의 실제 위치를
+    // getBoundingClientRect로 읽어 canvas 2D API로 직접 텍스트를 그린다.
+    // html2canvas가 중첩된 overflow:hidden 처리 과정에서 남긴 clip/transform 상태가
+    // 캡처 완료 후에도 컨텍스트에 남아있을 수 있어, 깨끗한 새 캔버스에 결과 이미지를
+    // 복사한 뒤 그 위에 텍스트를 그린다 (clip 잔존 가능성을 원천 차단).
+    const cleanCanvas = document.createElement("canvas");
+    cleanCanvas.width = canvas.width;
+    cleanCanvas.height = canvas.height;
+    const ctx = cleanCanvas.getContext("2d")!;
+    ctx.drawImage(canvas, 0, 0);
+
+    const fontFamily = "'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif";
+    for (const item of overlays) {
+      const target = iframe.contentDocument!.getElementById(item.id);
+      if (!target) continue;
+      const rect = target.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+
+      const fontSizePx = item.fontSize * SCALE;
+      ctx.font = `${item.fontWeight} ${fontSizePx}px ${item.fontFamily || fontFamily}`;
+      ctx.fillStyle = item.color;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = item.align;
+
+      const lineHeight = fontSizePx * 1.3;
+      const totalHeight = lineHeight * item.lines.length;
+      const rectCenterY = (rect.top + rect.height / 2) * SCALE;
+      let y = rectCenterY - totalHeight / 2 + lineHeight / 2;
+
+      const x = item.align === "right"
+        ? (rect.right) * SCALE
+        : item.align === "center"
+          ? (rect.left + rect.width / 2) * SCALE
+          : (rect.left) * SCALE;
+
+      for (const line of item.lines) {
+        ctx.fillText(line, x, y);
+        y += lineHeight;
+      }
+    }
+
+    return cleanCanvas.toDataURL("image/jpeg", 0.97);
   } finally {
     document.body.removeChild(iframe);
   }
