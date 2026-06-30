@@ -18,6 +18,7 @@ interface PolygonData {
   coords: Coord[];
   angle: number;
   label: string;
+  reason?: string;
 }
 
 export interface SavedPolygon {
@@ -25,6 +26,7 @@ export interface SavedPolygon {
   coords: { lat: number; lng: number }[];
   angle: number;
   label: string;
+  reason?: string;
 }
 
 export interface KakaoMapHandle {
@@ -34,12 +36,14 @@ export interface KakaoMapHandle {
   removeZone: (index: number) => void;
   duplicateZone: (index: number) => void;
   setZoneAdjust: (index: number, adj: ZoneAdjust) => void;
+  setExclusionReason: (index: number, reason: string) => void;
+  removeExclusionZone: (index: number) => void;
   getSaveData: () => SavedPolygon[];
   loadProject: (polygons: SavedPolygon[]) => void;
 }
 
 interface KakaoMapProps {
-  onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[]) => void;
+  onAreasChange: (polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number; reason?: string }[]) => void;
   moduleConfig?: ModuleConfig;
   onModuleCountsChange?: (counts: number[]) => void;
   onLocationDetected?: (address: string) => void;
@@ -49,6 +53,34 @@ const POLYGON_COLORS = ["#0066ff", "#ff6600", "#9900cc", "#00aa66", "#cc0033"];
 
 function getColor(index: number) {
   return POLYGON_COLORS[index % POLYGON_COLORS.length];
+}
+
+// 설치불가 구역 사유별 색상 (미지정/직접입력은 기존 제외영역 빨강 유지)
+const EXCLUSION_REASON_COLORS: Record<string, string> = {
+  "음영 간섭 구간 설치불가": "#f59e0b",
+  "지장물 간섭 구간 설치불가": "#9333ea",
+  "진입로 확보 구간 설치불가": "#0891b2",
+};
+const DEFAULT_EXCLUSION_COLOR = "#e53e3e";
+export const EXCLUSION_REASON_PRESETS = Object.keys(EXCLUSION_REASON_COLORS);
+
+export function getExclusionColor(reason?: string): string {
+  if (reason && EXCLUSION_REASON_COLORS[reason]) return EXCLUSION_REASON_COLORS[reason];
+  return DEFAULT_EXCLUSION_COLOR;
+}
+
+function exclusionLabelIconHtml(text: string, color: string): string {
+  return `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${text}</div>`;
+}
+
+function drawRoundedPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 // 모듈 좌표 기반 안정적 식별 키 (zoneAdjust/각도 변경 시 그리드가 바뀌면 자연스럽게 무효화됨)
@@ -191,6 +223,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exclusionPolygonsRef = useRef<PolygonData[]>([]);
   const [exclusionCount, setExclusionCount] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exclusionRendererRef = useRef<any>(null);
   const drawingModeRef = useRef<'inclusion' | 'exclusion'>('inclusion');
   const [drawingMode, setDrawingMode] = useState<'inclusion' | 'exclusion'>('inclusion');
 
@@ -413,6 +447,25 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     });
   }, []);
 
+  // 설치불가(제외) 구역 1개 생성: 그리기 완료 / 사각형 완료 / 프로젝트 불러오기에서 공용으로 사용
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const addExclusionZone = useCallback((L: any, map: any, coords: Coord[], reason: string = "") => {
+    const exIdx = exclusionPolygonsRef.current.length + 1;
+    const latLngs = coords.map((c) => [c.lat, c.lng] as [number, number]);
+    const area = calculateArea(coords);
+    const centroid = getCentroid(latLngs);
+    const color = getExclusionColor(reason);
+    const labelText = reason || `제외 ${exIdx}`;
+    const polygon = L.polygon(latLngs, {
+      color, weight: 2, fillColor: color, fillOpacity: 0.3, dashArray: "6,4",
+      renderer: exclusionRendererRef.current,
+    }).addTo(map);
+    const labelIcon = L.divIcon({ html: exclusionLabelIconHtml(labelText, color), className: "", iconAnchor: [20, 10] });
+    const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
+    exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: labelText, reason }];
+    setExclusionCount(exclusionPolygonsRef.current.length);
+  }, []);
+
   useEffect(() => {
     moduleConfigRef.current = moduleConfig;
     scheduleRenderModules();
@@ -435,6 +488,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         { maxZoom: 22, maxNativeZoom: 19, opacity: 0.9 }
       ).addTo(map);
       mapInstanceRef.current = map;
+      // 설치불가(제외) 구역도 canvas renderer로 그려야 PDF 캡처(html2canvas)에 포함됨 (SVG는 캡처 안 됨)
+      exclusionRendererRef.current = L.canvas();
     });
     return () => {
       active = false;
@@ -592,7 +647,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
   const notifyAreas = useCallback(() => {
     const inclusions = polygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'inclusion' as const, angle: p.angle }));
-    const exclusions = exclusionPolygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'exclusion' as const }));
+    const exclusions = exclusionPolygonsRef.current.map(p => ({ area: p.area, coords: p.coords, type: 'exclusion' as const, reason: p.reason ?? '' }));
     onAreasChange([...inclusions, ...exclusions]);
     renderModules();
   }, [onAreasChange, renderModules]);
@@ -646,14 +701,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     import("leaflet").then((L) => {
       const coords = capturedVertices.map(([lat, lng]) => ({ lat, lng }));
       const area = calculateArea(coords);
-      const centroid = getCentroid(capturedVertices);
       if (mode === 'exclusion') {
-        const exIdx = exclusionPolygonsRef.current.length + 1;
-        const polygon = L.polygon(capturedVertices, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
-        const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
-        const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-        exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: `제외 ${exIdx}` }];
-        setExclusionCount(exclusionPolygonsRef.current.length);
+        addExclusionZone(L, map, coords);
       } else {
         const colorIndex = polygonsRef.current.length;
         const color = getColor(colorIndex);
@@ -677,7 +726,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       }
       notifyAreas();
     });
-  }, [notifyAreas, addDragBehavior]);
+  }, [notifyAreas, addDragBehavior, addExclusionZone]);
 
   // --- Rectangle drawing (3 clicks: P1 corner → P2 edge → P3 width) ---
   const startDrawingRect = useCallback((mode: 'inclusion' | 'exclusion' = 'inclusion') => {
@@ -755,15 +804,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           const capturedMode = drawingModeRef.current;
           const coords = corners.map(([cLat, cLng]) => ({ lat: cLat, lng: cLng }));
           const area = calculateArea(coords);
-          const centroid = getCentroid(corners);
 
           if (capturedMode === 'exclusion') {
-            const exIdx = exclusionPolygonsRef.current.length + 1;
-            const polygon = L.polygon(corners, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
-            const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
-            const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-            exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: `제외 ${exIdx}` }];
-            setExclusionCount(exclusionPolygonsRef.current.length);
+            addExclusionZone(L, map, coords);
           } else {
             const colorIndex = polygonsRef.current.length;
             const color = getColor(colorIndex);
@@ -791,7 +834,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       map.on("click", handler);
       clickHandlerRef.current = handler;
     });
-  }, [cancelCurrentDrawing, notifyAreas, addDragBehavior]);
+  }, [cancelCurrentDrawing, notifyAreas, addDragBehavior, addExclusionZone]);
 
   const goToLocation = useCallback(async (result: SearchResult) => {
     const map = mapInstanceRef.current;
@@ -934,9 +977,15 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
         p.labelMarker.setOpacity(0);
       });
+      // 사유가 지정된 설치불가 구역은 도면에 표시(색상 유지), 사유 없는 구역은 기존처럼 숨김
       exclusionPolygonsRef.current.forEach(p => {
-        p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
-        p.labelMarker.setOpacity(0);
+        if (p.reason) {
+          const color = getExclusionColor(p.reason);
+          p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1, color, fillColor: color });
+        } else {
+          p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+        }
+        p.labelMarker.setOpacity(0); // DOM 라벨은 항상 숨기고, 사유 텍스트는 캡처 후 canvas에 직접 그림
       });
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
 
@@ -955,8 +1004,39 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         backgroundColor: "#f0f0f0",
       });
 
-      // Restore Leaflet UI controls
-      controlEls.forEach(el => { el.style.visibility = ''; });
+      // 사유가 있는 설치불가 구역의 라벨 텍스트를 캡처된 canvas에 직접 드로잉
+      // (html2canvas의 DOM 텍스트 렌더링 버그를 피하기 위해 canvas fillText로 직접 그림 — generatePdf.ts와 동일한 방식)
+      const ctx2 = canvas.getContext("2d");
+      if (ctx2) {
+        // html2canvas는 내부 렌더링 과정(클리핑/마스킹)에서 globalCompositeOperation/transform/alpha를
+        // 기본값이 아닌 상태로 남겨둘 수 있어, 캡처 직후 같은 canvas에 직접 그릴 때는 명시적으로 리셋해야 함
+        ctx2.setTransform(1, 0, 0, 1, 0, 0);
+        ctx2.globalCompositeOperation = "source-over";
+        ctx2.globalAlpha = 1;
+      }
+      if (ctx2) {
+        exclusionPolygonsRef.current.forEach(p => {
+          if (!p.reason) return;
+          const cLat = p.coords.reduce((s, c) => s + c.lat, 0) / p.coords.length;
+          const cLng = p.coords.reduce((s, c) => s + c.lng, 0) / p.coords.length;
+          const pt = map.latLngToContainerPoint([cLat, cLng]);
+          const x = pt.x * SCALE;
+          const y = pt.y * SCALE;
+          const color = getExclusionColor(p.reason);
+          const fontSize = 13 * SCALE;
+          ctx2.font = `700 ${fontSize}px 'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif`;
+          ctx2.textAlign = "center";
+          ctx2.textBaseline = "middle";
+          const textWidth = ctx2.measureText(p.reason).width;
+          const padX = 10 * SCALE, padY = 6 * SCALE;
+          const bw = textWidth + padX * 2, bh = fontSize + padY * 2;
+          ctx2.fillStyle = color;
+          drawRoundedPill(ctx2, x - bw / 2, y - bh / 2, bw, bh, bh / 2);
+          ctx2.fill();
+          ctx2.fillStyle = "#fff";
+          ctx2.fillText(p.reason, x, y + fontSize * 0.06);
+        });
+      }
 
       // Restore styles (modules present → keep zones hidden, else restore)
       const hasModules = moduleLayersRef.current.length > 0;
@@ -970,10 +1050,14 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         p.labelMarker.setOpacity(1);
       });
       exclusionPolygonsRef.current.forEach(p => {
-        p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1 });
+        const color = getExclusionColor(p.reason);
+        p.leafletPolygon.setStyle({ fillOpacity: 0.3, opacity: 1, color, fillColor: color });
         p.labelMarker.setOpacity(1);
       });
       if (printBoundsLayerRef.current) printBoundsLayerRef.current.setStyle({ opacity: 1, fillOpacity: 0.04 });
+
+      // Restore Leaflet UI controls
+      controlEls.forEach(el => { el.style.visibility = ''; });
 
       // Crop canvas to print area bounds if set
       if (printBoundsRef.current) {
@@ -1083,6 +1167,26 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       if (renderDebounceRef.current) clearTimeout(renderDebounceRef.current);
       renderDebounceRef.current = setTimeout(() => renderModulesRef.current?.(), 80);
     },
+    setExclusionReason: (index: number, reason: string) => {
+      const exData = exclusionPolygonsRef.current[index];
+      const L = leafletRef.current;
+      if (!exData || !L) return;
+      const color = getExclusionColor(reason);
+      const labelText = reason || `제외 ${index + 1}`;
+      exData.reason = reason;
+      exData.label = labelText;
+      exData.leafletPolygon.setStyle({ color, fillColor: color });
+      exData.labelMarker.setIcon(L.divIcon({ html: exclusionLabelIconHtml(labelText, color), className: "", iconAnchor: [20, 10] }));
+    },
+    removeExclusionZone: (index: number) => {
+      const exData = exclusionPolygonsRef.current[index];
+      if (!exData) return;
+      exData.leafletPolygon.remove();
+      exData.labelMarker.remove();
+      exclusionPolygonsRef.current = exclusionPolygonsRef.current.filter((_, i) => i !== index);
+      setExclusionCount(exclusionPolygonsRef.current.length);
+      notifyAreasRef.current?.();
+    },
     getSaveData: (): SavedPolygon[] => {
       const inclusions: SavedPolygon[] = polygonsRef.current.map(p => ({
         type: 'inclusion' as const,
@@ -1095,6 +1199,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         coords: p.coords,
         angle: 0,
         label: p.label,
+        reason: p.reason ?? '',
       }));
       return [...inclusions, ...exclusions];
     },
@@ -1117,15 +1222,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       savedPolygons.forEach(saved => {
         const latLngs = saved.coords.map(c => [c.lat, c.lng] as [number, number]);
         const area = calculateArea(saved.coords);
-        const centroid = getCentroid(latLngs);
 
         if (saved.type === 'exclusion') {
-          const exIdx = exclusionPolygonsRef.current.length + 1;
-          const polygon = L.polygon(latLngs, { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.3, dashArray: "6,4" }).addTo(map);
-          const labelIcon = L.divIcon({ html: `<div style="background:#e53e3e;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">제외 ${exIdx}</div>`, className: "", iconAnchor: [20, 10] });
-          const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-          exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords: saved.coords, angle: 0, label: saved.label }];
-          setExclusionCount(exclusionPolygonsRef.current.length);
+          addExclusionZone(L, map, saved.coords, saved.reason ?? '');
         } else {
           const colorIndex = polygonsRef.current.length;
           const color = getColor(colorIndex);
@@ -1157,7 +1256,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
       notifyAreasRef.current?.();
     },
-  }), [addDragBehavior]);
+  }), [addDragBehavior, addExclusionZone]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

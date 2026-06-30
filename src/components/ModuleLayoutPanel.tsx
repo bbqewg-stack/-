@@ -2,7 +2,7 @@
 
 import { useState, RefObject, useCallback, useEffect } from "react";
 import { ModuleConfig, ZoneAdjust, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
-import { KakaoMapHandle, SavedPolygon } from "@/components/KakaoMap";
+import { KakaoMapHandle, SavedPolygon, EXCLUSION_REASON_PRESETS, getExclusionColor } from "@/components/KakaoMap";
 
 interface Coord {
   lat: number;
@@ -10,7 +10,7 @@ interface Coord {
 }
 
 interface ModuleLayoutPanelProps {
-  polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number }[];
+  polygons: { area: number; coords: Coord[]; type: 'inclusion' | 'exclusion'; angle?: number; reason?: string }[];
   moduleConfig: ModuleConfig;
   onModuleConfigChange: (config: ModuleConfig) => void;
   moduleCounts: number[];
@@ -104,6 +104,7 @@ export default function ModuleLayoutPanel({
   const [projectName, setProjectName] = useState("태양광 발전소");
   const [location, setLocation] = useState("");
   const [zoneAdjusts, setZoneAdjusts] = useState<ZoneAdjust[]>([]);
+  const [customReasonEditIdx, setCustomReasonEditIdx] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (externalLocation) setLocation(externalLocation);
@@ -541,6 +542,65 @@ export default function ModuleLayoutPanel({
                   )}
                   {onZoneRemove && (
                     <button onClick={() => onZoneRemove(i)} className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5" title="구역 삭제">✕</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 설치불가 구역 (음영/지장물 간섭 등) */}
+      {exclusions.length > 0 && (
+        <div className="bg-orange-50 rounded-lg p-4">
+          <p className="text-xs text-gray-500 mb-2">설치불가 구역 ({exclusions.length}개)</p>
+          <div className="space-y-1.5">
+            {exclusions.map((exc, i) => {
+              const reason = exc.reason ?? '';
+              const color = getExclusionColor(reason);
+              const isKnownPreset = reason !== '' && EXCLUSION_REASON_PRESETS.includes(reason);
+              const showCustomInput = (reason !== '' && !isKnownPreset) || customReasonEditIdx.has(i);
+              return (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span style={{ background: color }} className="inline-block w-2 h-2 rounded-full flex-shrink-0" />
+                  {showCustomInput ? (
+                    <input
+                      type="text"
+                      defaultValue={reason}
+                      placeholder="사유 입력 (예: 변압기 인접 설치불가)"
+                      autoFocus={customReasonEditIdx.has(i) && reason === ''}
+                      onBlur={e => {
+                        const v = e.target.value.trim();
+                        mapRef?.current?.setExclusionReason(i, v);
+                        if (!v) {
+                          setCustomReasonEditIdx(prev => { const n = new Set(prev); n.delete(i); return n; });
+                        }
+                      }}
+                      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                      className="text-xs border rounded px-1.5 py-0.5 flex-1 min-w-0 outline-none focus:border-orange-400 bg-white"
+                    />
+                  ) : (
+                    <select
+                      value={reason}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v === '__custom__') {
+                          setCustomReasonEditIdx(prev => new Set(prev).add(i));
+                        } else {
+                          mapRef?.current?.setExclusionReason(i, v);
+                        }
+                      }}
+                      className="text-xs border rounded px-1 py-0.5 flex-1 min-w-0 outline-none focus:border-orange-400 bg-white"
+                    >
+                      <option value="">(사유 없음)</option>
+                      {EXCLUSION_REASON_PRESETS.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                      <option value="__custom__">직접 입력...</option>
+                    </select>
+                  )}
+                  {mapRef && (
+                    <button onClick={() => mapRef.current?.removeExclusionZone(i)} className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5" title="구역 삭제">✕</button>
                   )}
                 </div>
               );
