@@ -223,10 +223,9 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
 
     <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
-      <div style="background:${NAVY};color:#fff;height:40px;padding:0 14px;overflow:hidden;white-space:nowrap;display:table;width:100%;box-sizing:border-box;">
-        <div style="display:table-cell;vertical-align:middle;">
-          <span style="display:inline-block;width:4px;height:19px;background:#7dd3fc;border-radius:2px;vertical-align:middle;margin-right:9px;"></span><span style="font-size:20px;font-weight:700;letter-spacing:1.5px;vertical-align:middle;">태양광발전소 사업개요</span>
-        </div>
+      <div style="display:flex;align-items:center;background:${NAVY};color:#fff;height:40px;padding:0 14px;overflow:hidden;white-space:nowrap;box-sizing:border-box;">
+        <div style="flex-shrink:0;width:4px;height:19px;background:#7dd3fc;border-radius:2px;margin-right:9px;"></div>
+        <div style="font-size:20px;font-weight:700;letter-spacing:1.5px;">태양광발전소 사업개요</div>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -238,11 +237,11 @@ export function buildHtml(data: PdfReportData, logoDataUrl: string | null): stri
 
     <!-- COMPANY INFO BLOCK -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
-      <!-- Company header: table-cell vertical-align:middle (html2canvas 호환) -->
-      <div style="background:${NAVY};height:60px;padding:0 16px;display:table;width:100%;box-sizing:border-box;">
-        <div style="display:table-cell;vertical-align:middle;width:1px;padding-right:14px;">${logoHtmlCompany}</div>
-        <div style="display:table-cell;vertical-align:middle;width:1px;padding:0;"><div style="width:1px;height:44px;background:rgba(255,255,255,0.25);"></div></div>
-        <div style="display:table-cell;vertical-align:middle;padding-left:14px;">
+      <!-- Company header: 단일 레벨 flex + align-items:center -->
+      <div style="display:flex;align-items:center;background:${NAVY};height:60px;padding:0 16px;box-sizing:border-box;">
+        <div style="flex-shrink:0;display:flex;align-items:center;padding-right:14px;">${logoHtmlCompany}</div>
+        <div style="flex-shrink:0;width:1px;height:44px;background:rgba(255,255,255,0.25);"></div>
+        <div style="flex-shrink:0;padding-left:14px;display:flex;flex-direction:column;justify-content:center;">
           <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:0.5px;line-height:1.3;">태양광 시공 전문기업</div>
           <div style="font-size:11px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:4px;">Tech &amp; Engineering Corporation</div>
         </div>
