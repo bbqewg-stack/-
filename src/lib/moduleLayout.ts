@@ -162,9 +162,10 @@ export function calculateModuleLayout(
         if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
         placedInCol++;
       } else {
-        // 일반 polygon 셀: polygon 경계 + maxPerCol 모두 적용
+        // 일반 polygon 셀: 중심점 기준 판정 + maxPerCol 적용
+        // (모서리 4개 전부 포함을 요구하면 경계가 휘어진 구간에서 줄 전체가 탈락해
+        //  확장 영역과 끊어진 것처럼 보이는 원인이 됨 → 중심점 포함으로 완화)
         if (placedInCol >= maxPerCol) continue;
-        if (!corners.every((c) => inPoly2D(c, poly))) continue;
         if (!inPoly2D(center, poly)) continue;
         if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
         placedInCol++;
