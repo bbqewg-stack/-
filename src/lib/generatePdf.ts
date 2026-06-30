@@ -92,6 +92,8 @@ export interface TextOverlayItem {
   color: string;
   align: "left" | "right" | "center";
   fontFamily?: string;
+  /** placeholder div의 CSS padding과 맞추기 위한 가로 여백(px, 비스케일). left align이면 좌측에서, right align이면 우측에서 안쪽으로 띄움. */
+  padX?: number;
 }
 
 /**
@@ -180,7 +182,7 @@ export function buildHtml(
   const capRowsHtml = capRows.map((row, idx) => {
     const labelId = `ov-cap-label-${idx}`;
     const valueId = `ov-cap-value-${idx}`;
-    reg({ id: labelId, lines: [row.label], fontSize: 15, fontWeight: 700, color: LBL, align: "left" });
+    reg({ id: labelId, lines: [row.label], fontSize: 15, fontWeight: 700, color: LBL, align: "left", padX: 14 });
     reg({
       id: valueId,
       lines: row.lines,
@@ -188,6 +190,7 @@ export function buildHtml(
       fontWeight: row.big ? 900 : 600,
       color: row.big ? ACCENT : TEXT,
       align: "left",
+      padX: 16,
     });
     return `
     <div style="position:relative;width:100%;height:${capRowH}px;box-sizing:border-box;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
@@ -225,8 +228,8 @@ export function buildHtml(
 
   // 연락처 행
   const simpleContactRow = (idPrefix: string, lbl: string, val: string, withBorder: boolean, fontSize = 13) => {
-    reg({ id: `ov-${idPrefix}-label`, lines: [lbl], fontSize: 13, fontWeight: 700, color: ACCENT, align: "left" });
-    reg({ id: `ov-${idPrefix}-value`, lines: [val], fontSize, fontWeight: 500, color: TEXT, align: "left" });
+    reg({ id: `ov-${idPrefix}-label`, lines: [lbl], fontSize: 13, fontWeight: 700, color: ACCENT, align: "left", padX: 14 });
+    reg({ id: `ov-${idPrefix}-value`, lines: [val], fontSize, fontWeight: 500, color: TEXT, align: "left", padX: 14 });
     return `<div style="position:relative;width:100%;height:28px;box-sizing:border-box;${withBorder ? `border-bottom:1px solid ${BORDER};` : ""}">
       <div id="ov-${idPrefix}-label" style="position:absolute;left:0;top:0;bottom:0;width:70px;padding:0 10px;box-sizing:border-box;background:${STRIPE};border-right:1px solid ${BORDER};"></div>
       <div id="ov-${idPrefix}-value" style="position:absolute;left:70px;top:0;bottom:0;right:0;padding:0 10px;box-sizing:border-box;"></div>
@@ -235,7 +238,7 @@ export function buildHtml(
 
   const telFaxRowHtml = (() => {
     const posCell = (id: string, text: string, isLabel: boolean, left: string, width: string, opts: { borderLeft?: boolean } = {}) => {
-      reg({ id, lines: [text], fontSize: 13, fontWeight: isLabel ? 700 : 500, color: isLabel ? ACCENT : TEXT, align: "left" });
+      reg({ id, lines: [text], fontSize: 13, fontWeight: isLabel ? 700 : 500, color: isLabel ? ACCENT : TEXT, align: "left", padX: 14 });
       return `<div id="${id}" style="position:absolute;left:${left};top:0;bottom:0;width:${width};padding:0 10px;box-sizing:border-box;${isLabel ? `background:${STRIPE};` : ""}${opts.borderLeft ? `border-left:1px solid ${BORDER};` : ""}border-right:${isLabel ? `1px solid ${BORDER}` : "none"};"></div>`;
     };
     const half = (idPrefix: string, lbl: string, labelW: number, val: string, leftPct: string, borderLeft: boolean) =>
@@ -417,11 +420,12 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
       const rectCenterY = (rect.top + rect.height / 2) * SCALE;
       let y = rectCenterY - totalHeight / 2 + lineHeight / 2;
 
+      const padX = item.padX || 0;
       const x = item.align === "right"
-        ? (rect.right) * SCALE
+        ? (rect.right - padX) * SCALE
         : item.align === "center"
           ? (rect.left + rect.width / 2) * SCALE
-          : (rect.left) * SCALE;
+          : (rect.left + padX) * SCALE;
 
       for (const line of item.lines) {
         ctx.fillText(line, x, y);
