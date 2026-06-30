@@ -234,9 +234,9 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
-      <div style="background:${NAVY};color:#fff;height:34px;display:flex;align-items:center;padding:0 14px;gap:8px;">
-        <div style="width:3px;height:15px;background:#7dd3fc;border-radius:2px;flex-shrink:0;"></div>
-        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;line-height:34px;">태양광발전소 사업개요</span>
+      <div style="background:${NAVY};color:#fff;height:34px;line-height:34px;padding:0 14px;overflow:hidden;white-space:nowrap;">
+        <span style="display:inline-block;width:3px;height:15px;background:#7dd3fc;border-radius:2px;vertical-align:middle;margin-right:8px;"></span>
+        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;vertical-align:middle;">태양광발전소 사업개요</span>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -248,36 +248,36 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- COMPANY INFO BLOCK -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">
-      <!-- Company header: padding 기반 수직 정렬 -->
-      <div style="background:${NAVY};padding:4px 16px;height:60px;display:flex;gap:14px;">
-        <div style="flex-shrink:0;padding-top:4px;">${logoHtmlCompany}</div>
-        <div style="width:1px;height:44px;background:rgba(255,255,255,0.25);flex-shrink:0;margin-top:8px;"></div>
-        <div style="padding-top:10px;">
-          <div style="font-size:22px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;line-height:1.1;">TNE</div>
+      <!-- Company header: table-cell vertical-align:middle (html2canvas 호환) -->
+      <div style="background:${NAVY};height:60px;padding:0 16px;display:table;width:100%;box-sizing:border-box;">
+        <div style="display:table-cell;vertical-align:middle;width:1px;padding-right:14px;">${logoHtmlCompany}</div>
+        <div style="display:table-cell;vertical-align:middle;width:1px;padding:0;"><div style="width:1px;height:44px;background:rgba(255,255,255,0.25);"></div></div>
+        <div style="display:table-cell;vertical-align:middle;padding-left:14px;">
+          <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:0.5px;line-height:1.3;">태양광 시공 전문기업</div>
           <div style="font-size:10px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:3px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
-      <!-- Contact rows: line-height 수직 정렬 (Mobile 제거) -->
-      <div>
-        <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Tel</div>
-          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</div>
-          <div style="width:48px;flex-shrink:0;border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};line-height:28px;padding:0 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Fax</div>
-          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</div>
-        </div>
-        <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">E-mail</div>
-          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</div>
-        </div>
-        <div style="display:flex;border-bottom:1px solid ${BORDER};height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">Web</div>
-          <div style="flex:1;line-height:28px;padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</div>
-        </div>
-        <div style="display:flex;height:28px;">
-          <div style="width:70px;flex-shrink:0;border-right:1px solid ${BORDER};line-height:28px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};">주소</div>
-          <div style="flex:1;line-height:28px;padding:0 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</div>
-        </div>
-      </div>
+      <!-- Contact rows: table layout (html2canvas 호환) -->
+      <table style="width:100%;border-collapse:collapse;">
+        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
+          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">Tel</td>
+          <td style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</td>
+          <td style="width:48px;padding:0 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};">Fax</td>
+          <td style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</td>
+        </tr>
+        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
+          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">E-mail</td>
+          <td colspan="3" style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</td>
+        </tr>
+        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
+          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">Web</td>
+          <td colspan="3" style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</td>
+        </tr>
+        <tr style="height:28px;">
+          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">주소</td>
+          <td colspan="3" style="padding:0 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</td>
+        </tr>
+      </table>
     </div>
 
   </div>
@@ -342,9 +342,9 @@ export async function generatePreviewImage(data: PdfReportData): Promise<string>
 }
 
 /** Saves a preview data URL directly as a PDF file */
-export async function savePdfFromImage(imageDataUrl: string): Promise<void> {
+export async function savePdfFromImage(imageDataUrl: string, filename?: string): Promise<void> {
   const { default: jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
   pdf.addImage(imageDataUrl, "JPEG", 0, 0, 420, 297);
-  pdf.save("태양광_배치도.pdf");
+  pdf.save(filename ?? "태양광_배치도.pdf");
 }

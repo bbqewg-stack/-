@@ -203,7 +203,13 @@ export default function ModuleLayoutPanel({
   const handleConfirmPrint = async () => {
     if (!previewDataUrl) return;
     const { savePdfFromImage } = await import("@/lib/generatePdf");
-    await savePdfFromImage(previewDataUrl);
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const kwStr = capacityKw >= 1000
+      ? (capacityKw / 1000).toFixed(2) + 'MW'
+      : capacityKw.toFixed(2) + 'kW';
+    const safeName = (projectName || '태양광발전소').replace(/[\\/:*?"<>|]/g, '_');
+    const filename = `${safeName}_${kwStr}_${today}.pdf`;
+    await savePdfFromImage(previewDataUrl, filename);
     setPrintState('idle');
     setPreviewDataUrl(null);
   };

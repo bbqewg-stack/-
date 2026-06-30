@@ -239,6 +239,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     moduleLayersRef.current.forEach((l) => l.remove());
     moduleLayersRef.current = [];
 
+    // Recreate canvas renderer each time to prevent stale canvas artifacts
+    if (moduleRendererRef.current) {
+      try { moduleRendererRef.current.remove(); } catch { /* ok */ }
+      moduleRendererRef.current = null;
+    }
+
     if (!config?.enabled || !map || !L) {
       onModuleCountsChangeRef.current([]);
       // 모듈 숨김 시 구역 테두리/음영 + 라벨 복원
@@ -260,9 +266,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     }
 
     // Canvas renderer so html2canvas can capture module polygons directly (SVG cannot be captured)
-    if (!moduleRendererRef.current) {
-      moduleRendererRef.current = L.canvas();
-    }
+    moduleRendererRef.current = L.canvas();
 
     const allExclusionCoords = exclusionPolygonsRef.current.map((p) => p.coords);
     const counts: number[] = [];
@@ -1006,7 +1010,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     },
     setZoneAdjust: (index: number, adj: ZoneAdjust) => {
       zoneAdjustsRef.current[index] = adj;
-      renderModulesRef.current?.();
+      if (renderDebounceRef.current) clearTimeout(renderDebounceRef.current);
+      renderDebounceRef.current = setTimeout(() => renderModulesRef.current?.(), 80);
     },
     getSaveData: (): SavedPolygon[] => {
       const inclusions: SavedPolygon[] = polygonsRef.current.map(p => ({
