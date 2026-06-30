@@ -192,7 +192,7 @@ export function buildHtml(
       fontWeight: row.big ? 900 : 600,
       color: row.big ? ACCENT : TEXT,
       align: "left",
-      padX: 16,
+      padX: 8,
     });
     return `
     <div style="position:relative;width:100%;height:${capRowH}px;box-sizing:border-box;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
