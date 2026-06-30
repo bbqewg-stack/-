@@ -50,6 +50,13 @@ function getColor(index: number) {
   return POLYGON_COLORS[index % POLYGON_COLORS.length];
 }
 
+// 모듈 좌표 기반 안정적 식별 키 (zoneAdjust/각도 변경 시 그리드가 바뀌면 자연스럽게 무효화됨)
+function moduleKey(corners: Coord[]): string {
+  const cy = corners.reduce((s, c) => s + c.lat, 0) / corners.length;
+  const cx = corners.reduce((s, c) => s + c.lng, 0) / corners.length;
+  return `${cy.toFixed(8)}_${cx.toFixed(8)}`;
+}
+
 function calculateArea(coords: Coord[]): number {
   if (coords.length < 3) return 0;
   const R = 6371000;
@@ -224,6 +231,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderModulesRef = useRef<any>(null);
   const zoneAdjustsRef = useRef<ZoneAdjust[]>([]);
+  const deletedModuleKeysRef = useRef<Set<string>[]>([]);
   const onLocationDetectedRef = useRef(onLocationDetected);
   const [isDragMode, setIsDragMode] = useState(false);
   const isDragModeRef = useRef(false);
@@ -282,7 +290,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         return isCoordInPolygon(excCentroid, polygonData.coords);
       });
 
-      const modules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls, zoneAdjustsRef.current[zoneIndex]);
+      const allModules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls, zoneAdjustsRef.current[zoneIndex]);
+      const deletedKeys = deletedModuleKeysRef.current[zoneIndex];
+      const modules = deletedKeys ? allModules.filter((corners) => !deletedKeys.has(moduleKey(corners))) : allModules;
       counts.push(modules.length);
 
       // 구역별 색상으로 모듈 렌더링, 동시에 모듈 NW 코너 추적
@@ -298,6 +308,13 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           fillOpacity: 0.72,
           renderer: moduleRendererRef.current,
         }).addTo(map);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        poly.on("click", (e: any) => {
+          L.DomEvent.stop(e);
+          if (!deletedModuleKeysRef.current[zoneIndex]) deletedModuleKeysRef.current[zoneIndex] = new Set();
+          deletedModuleKeysRef.current[zoneIndex].add(moduleKey(corners));
+          renderModules();
+        });
         moduleLayersRef.current.push(poly);
 
         corners.forEach(c => {
@@ -330,9 +347,15 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     polygonsRef.current.forEach((p, i) => {
       if (totalModules > 0) {
         p.leafletPolygon.setStyle({ fillOpacity: 0, opacity: 0 });
+        // 구역 폴리곤(SVG)이 투명해도 클릭은 그대로 가로채 모듈(canvas) 클릭 삭제를 막으므로,
+        // 구역 이동 모드가 아닐 때는 포인터 이벤트를 꺼서 클릭이 아래 모듈 캔버스로 통과하게 함
+        const el = p.leafletPolygon.getElement?.();
+        if (el) el.style.pointerEvents = isDragModeRef.current ? "" : "none";
       } else {
         const color = getColor(i);
         p.leafletPolygon.setStyle({ fillOpacity: 0.25, opacity: 1, color });
+        const el = p.leafletPolygon.getElement?.();
+        if (el) el.style.pointerEvents = "";
         // 모듈 없으면 라벨 위치를 폴리곤 NW 코너로 복원
         const nwLat = Math.max(...p.coords.map(c => c.lat));
         const nwLng = Math.min(...p.coords.map(c => c.lng));
@@ -874,6 +897,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       map.dragging.enable();
       map.getContainer().style.cursor = '';
     }
+    // 모듈이 있으면 구역 폴리곤 포인터 이벤트를 다시 꺼서 모듈 클릭 삭제가 동작하게 함
+    renderModulesRef.current?.();
   }, []);
 
   const startDragMode = useCallback(() => {
@@ -886,6 +911,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       map.dragging.disable();
       map.getContainer().style.cursor = 'default';
     }
+    // 모듈에 가려진 구역도 드래그할 수 있도록 즉시 포인터 이벤트 복원
+    polygonsRef.current.forEach((p) => {
+      const el = p.leafletPolygon.getElement?.();
+      if (el) el.style.pointerEvents = "";
+    });
   }, [cancelCurrentDrawing, stopLocating]);
 
   const isAnyDrawing = isDrawing || isRectDrawing;
@@ -1005,6 +1035,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       polygonsRef.current = polygonsRef.current.filter((_, i) => i !== index);
       zoneCapacitiesRef.current = zoneCapacitiesRef.current.filter((_, i) => i !== index);
       zoneAdjustsRef.current = zoneAdjustsRef.current.filter((_, i) => i !== index);
+      deletedModuleKeysRef.current = deletedModuleKeysRef.current.filter((_, i) => i !== index);
       setPolygonCount(polygonsRef.current.length);
       notifyAreasRef.current?.();
     },
@@ -1040,6 +1071,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       exclusionPolygonsRef.current = [];
       zoneAdjustsRef.current = [];
       zoneCapacitiesRef.current = [];
+      deletedModuleKeysRef.current = [];
       setPolygonCount(0);
       setExclusionCount(0);
 

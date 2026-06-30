@@ -144,30 +144,19 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
   const LW = 138;
 
+  // display:table + vertical-align:middle 사용: line-height를 박스 높이와 동일하게 맞추는 방식은
+  // html2canvas가 폰트(테스트 결과 'Malgun Gothic'에서는 정상, 'Noto Sans KR' 등 대체 폰트에서는
+  // 베이스라인 계산이 틀어짐을 재현 확인)에 따라 텍스트가 위/아래로 쏠리는 근본 문제가 있어,
+  // 폰트 메트릭에 의존하지 않는 table-cell vertical-align:middle 방식으로 전면 교체.
   const capRowsHtml = capRows.map(([lbl, val], idx) => {
     const isMultiLine = val.includes('<br/>');
-    const isBigFont  = val.includes('font-size:22px');
-
-    // line-height trick: most reliable vertical centering for single-line in html2canvas
-    // multi-line / big-font use padding fallback
-    const lblStyle = `line-height:${capRowH}px;padding:0 10px;height:${capRowH}px;`;
-    let valStyle: string;
-    if (isMultiLine) {
-      const vp = Math.max(6, Math.floor((capRowH - 50) / 2));
-      valStyle = `padding:${vp}px 12px;line-height:1.55;height:${capRowH}px;box-sizing:border-box;`;
-    } else if (isBigFont) {
-      const vp = Math.max(6, Math.floor((capRowH - 34) / 2));
-      valStyle = `padding:${vp}px 12px;height:${capRowH}px;box-sizing:border-box;`;
-    } else {
-      valStyle = `line-height:${capRowH}px;padding:0 12px;height:${capRowH}px;`;
-    }
     return `
-    <div style="display:flex;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
-      <div style="width:${LW}px;flex-shrink:0;border-right:1px solid ${BORDER};
-                  ${lblStyle}font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
+    <div style="display:table;table-layout:fixed;width:100%;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
+      <div style="display:table-cell;vertical-align:middle;width:${LW}px;border-right:1px solid ${BORDER};
+                  padding:0 10px;font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
         ${lbl}
       </div>
-      <div style="flex:1;${valStyle}font-size:16px;font-weight:600;color:${TEXT};">
+      <div style="display:table-cell;vertical-align:middle;padding:${isMultiLine ? "8px" : "0"} 12px;${isMultiLine ? "line-height:1.55;" : ""}font-size:16px;font-weight:600;color:${TEXT};">
         ${val}
       </div>
     </div>`;
@@ -234,9 +223,10 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
 
     <!-- 사업개요 섹션 -->
     <div style="flex-shrink:0;">
-      <div style="background:${NAVY};color:#fff;height:34px;line-height:34px;padding:0 14px;overflow:hidden;white-space:nowrap;">
-        <span style="display:inline-block;width:3px;height:15px;background:#7dd3fc;border-radius:2px;vertical-align:middle;margin-right:8px;"></span>
-        <span style="font-size:16px;font-weight:700;letter-spacing:1.5px;vertical-align:middle;">태양광발전소 사업개요</span>
+      <div style="background:${NAVY};color:#fff;height:40px;padding:0 14px;overflow:hidden;white-space:nowrap;display:table;width:100%;box-sizing:border-box;">
+        <div style="display:table-cell;vertical-align:middle;">
+          <span style="display:inline-block;width:4px;height:19px;background:#7dd3fc;border-radius:2px;vertical-align:middle;margin-right:9px;"></span><span style="font-size:20px;font-weight:700;letter-spacing:1.5px;vertical-align:middle;">태양광발전소 사업개요</span>
+        </div>
       </div>
       <div style="border:1px solid ${BORDER};border-top:none;">
         ${capRowsHtml}
@@ -253,8 +243,8 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
         <div style="display:table-cell;vertical-align:middle;width:1px;padding-right:14px;">${logoHtmlCompany}</div>
         <div style="display:table-cell;vertical-align:middle;width:1px;padding:0;"><div style="width:1px;height:44px;background:rgba(255,255,255,0.25);"></div></div>
         <div style="display:table-cell;vertical-align:middle;padding-left:14px;">
-          <div style="font-size:14px;font-weight:700;color:#fff;letter-spacing:0.5px;line-height:1.3;">태양광 시공 전문기업</div>
-          <div style="font-size:10px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:3px;">Tech &amp; Engineering Corporation</div>
+          <div style="font-size:19px;font-weight:700;color:#fff;letter-spacing:0.5px;line-height:1.3;">태양광 시공 전문기업</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:4px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
       <!-- Contact rows: table layout (html2canvas 호환) -->
