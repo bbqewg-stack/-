@@ -536,6 +536,9 @@ export default function ModuleLayoutPanel({
                   {inclusions.length > 1 && (
                     <span className="text-xs text-gray-500 flex-shrink-0">{Math.round(inclusionNetAreas[i]).toLocaleString("ko")} m²</span>
                   )}
+                  {mapRef && (
+                    <button onClick={() => mapRef.current?.duplicateZone(i)} className="text-gray-300 hover:text-blue-500 text-xs leading-none flex-shrink-0 px-0.5" title="구역 복사 (같은 모양으로 복제)">⧉</button>
+                  )}
                   {onZoneRemove && (
                     <button onClick={() => onZoneRemove(i)} className="text-gray-300 hover:text-red-500 text-xs leading-none flex-shrink-0 px-0.5" title="구역 삭제">✕</button>
                   )}

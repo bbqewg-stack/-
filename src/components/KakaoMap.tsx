@@ -32,6 +32,7 @@ export interface KakaoMapHandle {
   renameZone: (index: number, label: string) => void;
   setZoneAngle: (index: number, angle: number) => void;
   removeZone: (index: number) => void;
+  duplicateZone: (index: number) => void;
   setZoneAdjust: (index: number, adj: ZoneAdjust) => void;
   getSaveData: () => SavedPolygon[];
   loadProject: (polygons: SavedPolygon[]) => void;
@@ -1036,6 +1037,44 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       zoneCapacitiesRef.current = zoneCapacitiesRef.current.filter((_, i) => i !== index);
       zoneAdjustsRef.current = zoneAdjustsRef.current.filter((_, i) => i !== index);
       deletedModuleKeysRef.current = deletedModuleKeysRef.current.filter((_, i) => i !== index);
+      setPolygonCount(polygonsRef.current.length);
+      notifyAreasRef.current?.();
+    },
+    duplicateZone: (index: number) => {
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      const src = polygonsRef.current[index];
+      if (!map || !L || !src) return;
+
+      // 화면 픽셀 기준으로 우측 하단에 살짝 띄워서 배치 (줌 레벨에 관계없이 항상 일정한 간격으로 보이도록,
+      // 원본과 겹치지 않게). 사용자가 이후 "구역 이동" 드래그로 원하는 위치에 옮기는 것을 전제로 함.
+      const OFFSET_PX = 50;
+      const offsetCoords = src.coords.map((c: Coord) => {
+        const pt = map.latLngToContainerPoint([c.lat, c.lng]);
+        const latlng = map.containerPointToLatLng(L.point(pt.x + OFFSET_PX, pt.y + OFFSET_PX));
+        return { lat: latlng.lat, lng: latlng.lng };
+      });
+
+      const latLngs = offsetCoords.map((c: Coord) => [c.lat, c.lng] as [number, number]);
+      const area = calculateArea(offsetCoords);
+      const colorIndex = polygonsRef.current.length;
+      const color = getColor(colorIndex);
+      const label = String.fromCharCode(65 + colorIndex) + "구역";
+      const shortLabel = String.fromCharCode(65 + colorIndex);
+      const nwCorner: [number, number] = [
+        Math.max(...latLngs.map(v => v[0])),
+        Math.min(...latLngs.map(v => v[1])),
+      ];
+      const polygon = L.polygon(latLngs, { color, weight: 2, fillColor: color, fillOpacity: 0.25 }).addTo(map);
+      const labelIcon = L.divIcon({
+        html: `<div style="color:${color};font-size:18px;font-weight:900;line-height:1;text-shadow:-1px -1px 0 rgba(0,0,0,0.7),1px -1px 0 rgba(0,0,0,0.7),-1px 1px 0 rgba(0,0,0,0.7),1px 1px 0 rgba(0,0,0,0.7);">${shortLabel}</div>`,
+        className: "",
+        iconSize: [22, 22],
+        iconAnchor: [0, 0],
+      });
+      const labelMarker = L.marker(nwCorner, { icon: labelIcon, interactive: false }).addTo(map);
+      polygonsRef.current = [...polygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords: offsetCoords, angle: src.angle, label }];
+      addDragBehavior(polygon);
       setPolygonCount(polygonsRef.current.length);
       notifyAreasRef.current?.();
     },
