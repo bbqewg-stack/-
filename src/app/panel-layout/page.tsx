@@ -68,8 +68,9 @@ export default function LayoutPage() {
     <div className="h-screen flex flex-col">
       <header className="bg-purple-700 text-white px-4 py-3 flex items-center justify-between shadow-md flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-base font-bold tracking-tight">
-            🔲 태양광 모듈 배치도
+          <h1 className="text-base font-bold tracking-tight flex items-center gap-2">
+            <img src="/company-logo.png" alt="TNE" className="h-6 w-auto bg-white rounded px-1 py-0.5" />
+            (주)티앤이 태양광 발전소 모듈 배치 프로그램
           </h1>
           <span className="text-xs bg-purple-500 px-2 py-0.5 rounded-full">
             영역 선택 → 자동 배치

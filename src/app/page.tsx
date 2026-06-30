@@ -16,8 +16,9 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <header className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between shadow-md flex-shrink-0">
-        <h1 className="text-base font-bold tracking-tight">
-          ☀️ 태양광 발전소 용량 분석
+        <h1 className="text-base font-bold tracking-tight flex items-center gap-2">
+          <img src="/company-logo.png" alt="TNE" className="h-6 w-auto bg-white rounded px-1 py-0.5" />
+          (주)티앤이 태양광 발전소 용량 분석 시뮬레이션
         </h1>
         <div className="flex gap-2">
           <Link

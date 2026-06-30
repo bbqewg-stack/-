@@ -84,7 +84,7 @@ function calcInverters(totalKw: number): string {
   return parts.join(" / ") || "-";
 }
 
-function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
+export function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   const PW = 1680, PH = 1188;
   const MARGIN = 20;
   const HDR_H = 68;
@@ -144,20 +144,20 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
   const LW = 138;
 
-  // display:table + vertical-align:middle 사용: line-height를 박스 높이와 동일하게 맞추는 방식은
-  // html2canvas가 폰트(테스트 결과 'Malgun Gothic'에서는 정상, 'Noto Sans KR' 등 대체 폰트에서는
-  // 베이스라인 계산이 틀어짐을 재현 확인)에 따라 텍스트가 위/아래로 쏠리는 근본 문제가 있어,
-  // 폰트 메트릭에 의존하지 않는 table-cell vertical-align:middle 방식으로 전면 교체.
+  // 단일 레벨 flex row + align-items:center 사용 (하단 회사정보 블록과 동일 방식).
+  // line-height를 박스 높이와 동일하게 맞추는 트릭은 폰트별로 베이스라인 계산이 틀어져
+  // 텍스트가 위/아래로 쏠리는 문제가 있었음 — 폰트 메트릭에 의존하지 않는
+  // flex 단일 레이아웃(중첩 없음)으로 전면 교체.
   const capRowsHtml = capRows.map(([lbl, val], idx) => {
     const isMultiLine = val.includes('<br/>');
     return `
-    <div style="display:table;table-layout:fixed;width:100%;height:${capRowH}px;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
-      <div style="display:table-cell;vertical-align:middle;width:${LW}px;border-right:1px solid ${BORDER};
-                  padding:0 10px;font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
-        ${lbl}
+    <div style="display:flex;width:100%;min-height:${capRowH}px;box-sizing:border-box;background:${idx % 2 === 0 ? "#fff" : STRIPE};border-bottom:1px solid ${BORDER};">
+      <div style="display:flex;align-items:center;flex-shrink:0;width:${LW}px;border-right:1px solid ${BORDER};
+                  padding:0 10px;box-sizing:border-box;font-size:15px;font-weight:700;color:${LBL};letter-spacing:0.3px;overflow:hidden;">
+        <span>${lbl}</span>
       </div>
-      <div style="display:table-cell;vertical-align:middle;padding:${isMultiLine ? "8px" : "0"} 12px;${isMultiLine ? "line-height:1.55;" : ""}font-size:16px;font-weight:600;color:${TEXT};">
-        ${val}
+      <div style="display:flex;align-items:center;flex:1;padding:${isMultiLine ? "8px" : "0"} 12px;box-sizing:border-box;${isMultiLine ? "line-height:1.55;" : ""}font-size:16px;font-weight:600;color:${TEXT};">
+        <span>${val}</span>
       </div>
     </div>`;
   }).join("");
@@ -247,27 +247,29 @@ function buildHtml(data: PdfReportData, logoDataUrl: string | null): string {
           <div style="font-size:11px;color:rgba(255,255,255,0.70);letter-spacing:0.5px;margin-top:4px;">Tech &amp; Engineering Corporation</div>
         </div>
       </div>
-      <!-- Contact rows: table layout (html2canvas 호환) -->
-      <table style="width:100%;border-collapse:collapse;">
-        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
-          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">Tel</td>
-          <td style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5567</td>
-          <td style="width:48px;padding:0 8px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};">Fax</td>
-          <td style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">055 291 5568</td>
-        </tr>
-        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
-          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">E-mail</td>
-          <td colspan="3" style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">tnekbt1041@naver.com</td>
-        </tr>
-        <tr style="height:28px;border-bottom:1px solid ${BORDER};">
-          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">Web</td>
-          <td colspan="3" style="padding:0 10px;font-size:13px;font-weight:500;color:${TEXT};">www.tneepc.com</td>
-        </tr>
-        <tr style="height:28px;">
-          <td style="width:70px;padding:0 10px;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">주소</td>
-          <td colspan="3" style="padding:0 10px;font-size:12px;font-weight:500;color:${TEXT};">경남 창원시 의창구 동읍 신촌본포로426 1동</td>
-        </tr>
-      </table>
+      <!-- Contact rows: 단일 레벨 flex row + align-items:center (짧은 한 줄 텍스트는 table-cell의
+           baseline 기반 middle 정의보다 flex의 line-box 기준 center가 더 정확히 중앙정렬됨) -->
+      ${(() => {
+        const cellBase = `display:flex;align-items:center;padding:0 10px;box-sizing:border-box;`;
+        const labelCell = (txt: string, w: number) =>
+          `<div style="${cellBase}width:${w}px;flex-shrink:0;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-right:1px solid ${BORDER};">${txt}</div>`;
+        const valueCell = (txt: string, fontSize = 13) =>
+          `<div style="${cellBase}flex:1;font-size:${fontSize}px;font-weight:500;color:${TEXT};">${txt}</div>`;
+        const row = (inner: string, withBorder: boolean) =>
+          `<div style="display:flex;width:100%;height:28px;${withBorder ? `border-bottom:1px solid ${BORDER};` : ""}">${inner}</div>`;
+
+        return [
+          row(
+            labelCell("Tel", 70) + valueCell("055 291 5567") +
+            `<div style="${cellBase}width:48px;flex-shrink:0;font-size:13px;font-weight:700;color:${ACCENT};background:${STRIPE};border-left:1px solid ${BORDER};border-right:1px solid ${BORDER};">Fax</div>` +
+            valueCell("055 291 5568"),
+            true
+          ),
+          row(labelCell("E-mail", 70) + valueCell("tnekbt1041@naver.com"), true),
+          row(labelCell("Web", 70) + valueCell("www.tneepc.com"), true),
+          row(labelCell("주소", 70) + valueCell("경남 창원시 의창구 동읍 신촌본포로426 1동", 12), false),
+        ].join("");
+      })()}
     </div>
 
   </div>

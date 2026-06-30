@@ -129,37 +129,43 @@ export function calculateModuleLayout(
   const rightAdd  = Math.max(0, adjust?.right  ?? 0);
 
   const numCols = baseNumCols + leftAdd + rightAdd;
-  const numRows = baseNumRows + topAdd + bottomAdd;
   const startX = minX - leftAdd * colStep;
-  const startY = minY - bottomAdd * rowStep;
 
   // Coordinate range covered by the base polygon-fitted grid
   const baseMinX = minX, baseMaxX = minX + baseNumCols * colStep;
   const baseMinY = minY, baseMaxY = minY + baseNumRows * rowStep;
 
-  const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : numRows;
+  // northRows: 폴리곤 남쪽 끝(baseMinY)부터 상(top) 확장 끝까지의 행 수.
+  // 행은 항상 baseMinY를 기준으로 northRows-1(최북단) → 0(폴리곤 남쪽 끝) 순서로 채워짐.
+  const northRows = baseNumRows + topAdd;
+  const maxPerCol = config.maxModulesPerColumn > 0 ? config.maxModulesPerColumn : northRows + bottomAdd;
+
+  const exclTest = (corners: { x: number; y: number }[], center: { x: number; y: number }) =>
+    excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e));
 
   for (let col = 0; col < numCols; col++) {
     const x = startX + col * colStep;
+    const isXExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6;
     let placedInCol = 0; // counts polygon + X-extended cells (subject to maxPerCol)
-    for (let row = numRows - 1; row >= 0; row--) {
-      const y = startY + row * rowStep;
+    let lastPlacedY: number | null = null; // 이 열에서 실제로 배치된 행 중 가장 남쪽 y (하단 확장의 기준점)
+
+    // 북(top) 확장 ~ 폴리곤 본체: baseMinY(폴리곤 남쪽 끝)를 기준으로 북→남 순회
+    for (let row = northRows - 1; row >= 0; row--) {
+      const y = baseMinY + row * rowStep;
       const corners = [
         { x, y }, { x: x + mW, y }, { x: x + mW, y: y + mH }, { x, y: y + mH },
       ];
       const center = { x: x + mW / 2, y: y + mH / 2 };
 
-      const isXExtended = x < baseMinX - 1e-6 || x + mW > baseMaxX + 1e-6;
-      const isYExtended = y < baseMinY - 1e-6 || y + mH > baseMaxY + 1e-6;
+      const isYTopExtended = y + mH > baseMaxY + 1e-6;
 
-      if (isYExtended) {
-        // 상(top)/하(bottom) 확장 행: polygon 체크 생략, maxPerCol 무제한
-        // (X 확장 열의 상하 확장 모서리 포함)
-        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+      if (isYTopExtended) {
+        // 상(top) 확장 행: polygon 체크 생략, maxPerCol 무제한
+        if (exclTest(corners, center)) continue;
       } else if (isXExtended) {
         // 좌(left)/우(right) 확장 열 (polygon Y 범위 내): polygon 체크 생략, maxPerCol 적용
         if (placedInCol >= maxPerCol) continue;
-        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+        if (exclTest(corners, center)) continue;
         placedInCol++;
       } else {
         // 일반 polygon 셀: 중심점 기준 판정 + maxPerCol 적용
@@ -167,12 +173,31 @@ export function calculateModuleLayout(
         //  확장 영역과 끊어진 것처럼 보이는 원인이 됨 → 중심점 포함으로 완화)
         if (placedInCol >= maxPerCol) continue;
         if (!inPoly2D(center, poly)) continue;
-        if (excls.some((e) => corners.some((c) => inPoly2D(c, e)) || inPoly2D(center, e))) continue;
+        if (exclTest(corners, center)) continue;
         placedInCol++;
       }
 
       result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
       if (result.length >= MODULE_LAYOUT_LIMIT) return result;
+      lastPlacedY = y;
+    }
+
+    // 남(bottom) 확장: maxPerCol에 의해 이 열의 실제 배치가 폴리곤 남쪽 끝(baseMinY)
+    // 이전에 멈췄더라도, 그 마지막 배치 행(lastPlacedY) 바로 아래부터 이어 붙여야 함
+    // (baseMinY를 그대로 기준으로 삼으면 잘려나간 만큼 빈 칸이 생김 — 남측 확장 시
+    //  한 칸 이상 띄워져 보이는 버그의 원인이었음)
+    if (bottomAdd > 0) {
+      const anchorY = lastPlacedY ?? baseMinY;
+      for (let k = 1; k <= bottomAdd; k++) {
+        const y = anchorY - k * rowStep;
+        const corners = [
+          { x, y }, { x: x + mW, y }, { x: x + mW, y: y + mH }, { x, y: y + mH },
+        ];
+        const center = { x: x + mW / 2, y: y + mH / 2 };
+        if (exclTest(corners, center)) continue;
+        result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
+        if (result.length >= MODULE_LAYOUT_LIMIT) return result;
+      }
     }
   }
 
