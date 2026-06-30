@@ -144,9 +144,11 @@ export function buildHtml(
   const reg = (item: TextOverlayItem) => { overlays.push(item); return item.id; };
 
   // 모듈 규격
+  const moduleWidthText = data.moduleWidth.toLocaleString("ko");
+  const moduleHeightText = data.moduleHeight.toLocaleString("ko");
   const moduleSpecText = data.moduleMaker
-    ? `${data.moduleMaker} : ${data.moduleWidth}×${data.moduleHeight} ㎜`
-    : `${data.moduleWattage}W : ${data.moduleWidth}×${data.moduleHeight} ㎜`;
+    ? `${data.moduleMaker} : ${moduleWidthText}×${moduleHeightText} ㎜`
+    : `${data.moduleWattage}W : ${moduleWidthText}×${moduleHeightText} ㎜`;
 
   // 모듈 구성 2줄
   const moduleConfigLines = (data.modulesPerString > 0 && data.totalStrings > 0)
@@ -177,16 +179,16 @@ export function buildHtml(
   ];
 
   const capRowH = Math.max(58, Math.floor((infoH * 0.72 - 36) / capRows.length));
-  const LW = 138;
+  const LW = 150;
 
   const capRowsHtml = capRows.map((row, idx) => {
     const labelId = `ov-cap-label-${idx}`;
     const valueId = `ov-cap-value-${idx}`;
-    reg({ id: labelId, lines: [row.label], fontSize: 15, fontWeight: 700, color: LBL, align: "left", padX: 14 });
+    reg({ id: labelId, lines: [row.label], fontSize: 17, fontWeight: 700, color: LBL, align: "left", padX: 14 });
     reg({
       id: valueId,
       lines: row.lines,
-      fontSize: row.big ? 22 : 16,
+      fontSize: row.big ? 24 : 18,
       fontWeight: row.big ? 900 : 600,
       color: row.big ? ACCENT : TEXT,
       align: "left",
@@ -212,7 +214,7 @@ export function buildHtml(
     : `<div style="font-size:22px;font-weight:900;color:#fff;font-family:Arial,sans-serif;letter-spacing:3px;">TNE</div>`;
 
   // 상단 헤더바 텍스트
-  reg({ id: "ov-hdr-title", lines: [`${data.projectName ? data.projectName + " 태양광발전소" : "태양광발전소"}  MODULE ARRAY`], fontSize: 19, fontWeight: 800, color: "#fff", align: "left" });
+  reg({ id: "ov-hdr-title", lines: [`${data.projectName ? data.projectName + " 태양광발전소" : "태양광발전소"}  MODULE ARRAY`], fontSize: 22, fontWeight: 800, color: "#fff", align: "left" });
   if (data.location) {
     reg({ id: "ov-hdr-loc", lines: [data.location], fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.80)", align: "left" });
   }
@@ -223,12 +225,12 @@ export function buildHtml(
   reg({ id: "ov-section-title", lines: ["태양광발전소 사업개요"], fontSize: 20, fontWeight: 700, color: "#fff", align: "left" });
 
   // 회사 헤더 텍스트
-  reg({ id: "ov-co-title", lines: ["태양광 시공 전문기업"], fontSize: 19, fontWeight: 700, color: "#fff", align: "left" });
+  reg({ id: "ov-co-title", lines: ["태양광발전소 시공 전문기업"], fontSize: 21, fontWeight: 700, color: "#fff", align: "left" });
   reg({ id: "ov-co-subtitle", lines: ["Tech & Engineering Corporation"], fontSize: 11, fontWeight: 400, color: "rgba(255,255,255,0.70)", align: "left" });
 
   // 연락처 행
-  const simpleContactRow = (idPrefix: string, lbl: string, val: string, withBorder: boolean, fontSize = 13) => {
-    reg({ id: `ov-${idPrefix}-label`, lines: [lbl], fontSize: 13, fontWeight: 700, color: ACCENT, align: "left", padX: 14 });
+  const simpleContactRow = (idPrefix: string, lbl: string, val: string, withBorder: boolean, fontSize = 15) => {
+    reg({ id: `ov-${idPrefix}-label`, lines: [lbl], fontSize: 15, fontWeight: 700, color: ACCENT, align: "left", padX: 14 });
     reg({ id: `ov-${idPrefix}-value`, lines: [val], fontSize, fontWeight: 500, color: TEXT, align: "left", padX: 14 });
     return `<div style="position:relative;width:100%;height:28px;box-sizing:border-box;${withBorder ? `border-bottom:1px solid ${BORDER};` : ""}">
       <div id="ov-${idPrefix}-label" style="position:absolute;left:0;top:0;bottom:0;width:70px;padding:0 10px;box-sizing:border-box;background:${STRIPE};border-right:1px solid ${BORDER};"></div>
@@ -238,7 +240,7 @@ export function buildHtml(
 
   const telFaxRowHtml = (() => {
     const posCell = (id: string, text: string, isLabel: boolean, left: string, width: string, opts: { borderLeft?: boolean } = {}) => {
-      reg({ id, lines: [text], fontSize: 13, fontWeight: isLabel ? 700 : 500, color: isLabel ? ACCENT : TEXT, align: "left", padX: 14 });
+      reg({ id, lines: [text], fontSize: 15, fontWeight: isLabel ? 700 : 500, color: isLabel ? ACCENT : TEXT, align: "left", padX: 14 });
       return `<div id="${id}" style="position:absolute;left:${left};top:0;bottom:0;width:${width};padding:0 10px;box-sizing:border-box;${isLabel ? `background:${STRIPE};` : ""}${opts.borderLeft ? `border-left:1px solid ${BORDER};` : ""}border-right:${isLabel ? `1px solid ${BORDER}` : "none"};"></div>`;
     };
     const half = (idPrefix: string, lbl: string, labelW: number, val: string, leftPct: string, borderLeft: boolean) =>
@@ -253,7 +255,7 @@ export function buildHtml(
     telFaxRowHtml,
     simpleContactRow("email", "E-mail", "tnekbt1041@naver.com", true),
     simpleContactRow("web", "Web", "www.tneepc.com", true),
-    simpleContactRow("addr", "주소", "경남 창원시 의창구 동읍 신촌본포로426 1동", false, 12),
+    simpleContactRow("addr", "주소", "경남 창원시 의창구 동읍 신촌본포로426 1동", false, 14),
   ].join("");
 
   const html = `<!DOCTYPE html>
@@ -277,8 +279,8 @@ export function buildHtml(
               display:flex;align-items:center;padding:0 24px;gap:20px;">
     <div style="flex-shrink:0;display:flex;align-items:center;">${logoHtmlHeader}</div>
     <div style="width:1px;height:44px;background:rgba(255,255,255,0.25);flex-shrink:0;"></div>
-    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;">
-      <div id="ov-hdr-title" style="height:23px;"></div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;margin-top:-4px;">
+      <div id="ov-hdr-title" style="height:28px;"></div>
       ${data.location ? `<div id="ov-hdr-loc" style="height:16px;"></div>` : ""}
     </div>
     <div style="flex-shrink:0;text-align:right;">
