@@ -11,6 +11,7 @@ import {
   calcBreakevenYear,
   calcBlendedRate,
   calcConstructionCostWan,
+  BLANK_PROPOSAL,
 } from "@/lib/proposalData";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -48,6 +49,18 @@ function EditSidebar({ data, onChange }: { data: ProposalData; onChange: (d: Pro
   const set = (patch: Partial<ProposalData>) => onChange({ ...data, ...patch });
   const blended = calcBlendedRate(data);
   const totalCost = calcConstructionCostWan(data);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      if (result) set({ mapImageDataUrl: result });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
 
   return (
     <div className="no-print fixed top-12 right-0 bottom-0 w-72 bg-slate-800 text-white overflow-y-auto p-4 z-40 border-l border-slate-700 shadow-2xl">
@@ -93,6 +106,30 @@ function EditSidebar({ data, onChange }: { data: ProposalData; onChange: (d: Pro
         <input className={inputCls} type="number" value={Math.round(data.systemEfficiency * 100)}
           onChange={e => set({ systemEfficiency: +e.target.value / 100 })} />
       </Field>
+
+      <hr className="border-slate-600 my-4" />
+      <p className="text-xs font-bold text-slate-300 mb-3 uppercase tracking-widest">배치도 이미지</p>
+
+      {data.mapImageDataUrl ? (
+        <div className="mb-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={data.mapImageDataUrl} alt="배치도 미리보기" className="w-full rounded border border-slate-600 object-contain mb-2" style={{ maxHeight: "120px" }} />
+          <div className="flex gap-2">
+            <label className="flex-1 text-center text-xs py-1.5 bg-slate-600 hover:bg-slate-500 rounded cursor-pointer">
+              교체
+              <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+            </label>
+            <button onClick={() => set({ mapImageDataUrl: "" })} className="flex-1 text-xs py-1.5 bg-red-800 hover:bg-red-700 rounded">
+              삭제
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-slate-700 transition-colors mb-3">
+          <span className="text-slate-400 text-xs text-center leading-relaxed">클릭하여 배치도 이미지 첨부<br />(CAD 캡처, JPG/PNG)</span>
+          <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+        </label>
+      )}
 
       <hr className="border-slate-600 my-4" />
       <p className="text-xs font-bold text-slate-300 mb-3 uppercase tracking-widest">시공사 정보</p>
@@ -676,13 +713,10 @@ export default function ProposalPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    // Data is saved before window.open, so it should be available immediately.
-    // Also listen for storage events so map image (saved async after capture) updates live.
     const initial = loadProposalData();
     if (initial) {
       setData(initial);
     } else {
-      // Fallback: wait a bit in case of race condition
       const t = setTimeout(() => {
         const saved = loadProposalData();
         if (saved) setData(saved);
@@ -710,11 +744,16 @@ export default function ProposalPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="text-center">
-          <p className="text-slate-500 mb-4">제안서 데이터가 없습니다.</p>
-          <p className="text-sm text-slate-400 mb-6">모듈 배치 페이지에서 &quot;사업제안서 생성&quot; 버튼을 눌러주세요.</p>
-          <Link href="/panel-layout" className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
-            모듈 배치로 이동
-          </Link>
+          <p className="text-slate-500 mb-2 font-semibold">제안서 데이터가 없습니다.</p>
+          <p className="text-sm text-slate-400 mb-6">아래 중 하나를 선택해주세요.</p>
+          <div className="flex flex-col gap-3 items-center">
+            <Link href="/proposal/new" className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 text-sm">
+              직접 입력해서 제안서 만들기
+            </Link>
+            <Link href="/panel-layout" className="px-6 py-2.5 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-700 text-sm">
+              모듈 배치 후 자동 생성
+            </Link>
+          </div>
         </div>
       </div>
     );

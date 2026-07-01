@@ -56,6 +56,36 @@ export const DEFAULT_PROPOSAL: Partial<ProposalData> = {
   companyLicense: "제 경남-02113 호",
 };
 
+export const BLANK_PROPOSAL: ProposalData = {
+  projectName: "태양광 발전소",
+  location: "",
+  totalCapacityKw: 0,
+  totalModules: 0,
+  moduleWattage: 500,
+  moduleMaker: "",
+  moduleWidth: 1.134,
+  moduleHeight: 2.278,
+  modulesPerString: 15,
+  totalStrings: 0,
+  peakSunHours: 3.5,
+  systemEfficiency: 0.85,
+  zones: [],
+  mapImageDataUrl: "",
+  clientName: "",
+  smpRate: 120,
+  recRate: 64,
+  recWeight: 1.5,
+  constructionUnitPriceWan: 130,
+  proposalDate: "",
+  companyName: "주식회사 티앤이",
+  companyTel: "055-291-5567",
+  companyFax: "055-291-5568",
+  companyEmail: "tnekbt1041@naver.com",
+  companyWeb: "www.tneepc.com",
+  companyAddress: "경남 창원시 의창구 동읍 신촌본포로426",
+  companyLicense: "제 경남-02113 호",
+};
+
 export function calcBlendedRate(data: Pick<ProposalData, "smpRate" | "recRate" | "recWeight">): number {
   return data.smpRate + data.recRate * data.recWeight;
 }
