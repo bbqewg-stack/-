@@ -270,11 +270,27 @@ export default function ModuleLayoutPanel({
     window.open("/proposal", "_blank");
 
     // 3) Capture map image in background and update localStorage
+    // PNG at 3x scale can exceed localStorage 5MB limit, so compress to JPEG first
     setPrintState('capturing');
     try {
-      const mapImageDataUrl = await mapRef.current.captureMapImage();
-      saveProposalData({ ...baseData, mapImageDataUrl });
-      // storage event fires in the new tab automatically — no reload needed
+      const pngDataUrl = await mapRef.current.captureMapImage();
+      let mapImageDataUrl = pngDataUrl;
+      if (pngDataUrl && pngDataUrl.startsWith("data:image/png")) {
+        const img = await new Promise<HTMLImageElement>((res, rej) => {
+          const el = new Image();
+          el.onload = () => res(el);
+          el.onerror = rej;
+          el.src = pngDataUrl;
+        });
+        const cvs = document.createElement("canvas");
+        cvs.width = img.width;
+        cvs.height = img.height;
+        cvs.getContext("2d")!.drawImage(img, 0, 0);
+        mapImageDataUrl = cvs.toDataURL("image/jpeg", 0.85);
+      }
+      if (mapImageDataUrl) {
+        saveProposalData({ ...baseData, mapImageDataUrl });
+      }
     } catch {
       // map capture failed; proposal page still works without map image
     } finally {
