@@ -225,6 +225,8 @@ export default function ModuleLayoutPanel({
 
   const handleOpenProposal = async () => {
     if (!mapRef?.current || totalModules === 0) return;
+    // open window immediately (must be synchronous from user gesture to avoid popup blocker)
+    const proposalWindow = window.open("/proposal", "_blank");
     setPrintState('capturing');
     try {
       const { saveProposalData, DEFAULT_PROPOSAL } = await import("@/lib/proposalData");
@@ -257,8 +259,10 @@ export default function ModuleLayoutPanel({
         recWeight: 1.5,
         proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
       } as import("@/lib/proposalData").ProposalData);
-      window.open("/proposal", "_blank");
+      // reload the already-opened window after data is saved to localStorage
+      if (proposalWindow) proposalWindow.location.reload();
     } catch {
+      if (proposalWindow) proposalWindow.close();
       alert("제안서 데이터 생성 중 오류가 발생했습니다.");
     } finally {
       setPrintState('idle');

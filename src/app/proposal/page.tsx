@@ -667,12 +667,22 @@ export default function ProposalPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    const saved = loadProposalData();
-    if (saved) {
-      setData(saved);
-    } else {
-      setNotFound(true);
-    }
+    // Poll for data — the parent tab saves to localStorage after opening this tab,
+    // so we retry for up to ~5 seconds before giving up.
+    let tries = 0;
+    const poll = () => {
+      const saved = loadProposalData();
+      if (saved) {
+        setData(saved);
+        return;
+      }
+      if (tries++ < 25) {
+        setTimeout(poll, 200);
+      } else {
+        setNotFound(true);
+      }
+    };
+    poll();
   }, []);
 
   const handleChange = useCallback((updated: ProposalData) => {
@@ -697,7 +707,10 @@ export default function ProposalPage() {
   if (!data) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <p className="text-slate-400">불러오는 중...</p>
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 text-sm">데이터 불러오는 중...</p>
+        </div>
       </div>
     );
   }
