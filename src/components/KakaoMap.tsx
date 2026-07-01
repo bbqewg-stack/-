@@ -259,6 +259,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const exclusionRectP1Ref = useRef<[number, number] | null>(null);
   const exclusionRectP2Ref = useRef<[number, number] | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const exclusionRectMarkersRef = useRef<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exclusionRectPreviewRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exclusionRectClickHandlerRef = useRef<any>(null);
@@ -679,6 +681,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       map.getContainer().style.cursor = "";
     }
     if (exclusionRectPreviewRef.current) { exclusionRectPreviewRef.current.remove(); exclusionRectPreviewRef.current = null; }
+    exclusionRectMarkersRef.current.forEach(m => m.remove());
+    exclusionRectMarkersRef.current = [];
     exclusionRectP1Ref.current = null;
     exclusionRectP2Ref.current = null;
     exclusionRectPhaseRef.current = 0;
@@ -710,6 +714,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           exclusionRectP1Ref.current = [lat, lng];
           exclusionRectPhaseRef.current = 1;
           setExclusionRectPhase(1);
+          const m1 = L.circleMarker([lat, lng], { radius: 5, color: "#e53e3e", fillColor: "#e53e3e", fillOpacity: 1 }).addTo(map);
+          exclusionRectMarkersRef.current.push(m1);
 
         } else if (phase === 1) {
           // P2: 인접 꼭짓점 (엣지 방향 결정)
@@ -717,6 +723,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           exclusionRectP2Ref.current = [lat, lng];
           exclusionRectPhaseRef.current = 2;
           setExclusionRectPhase(2);
+          const m2 = L.circleMarker([lat, lng], { radius: 5, color: "#e53e3e", fillColor: "#e53e3e", fillOpacity: 1 }).addTo(map);
+          exclusionRectMarkersRef.current.push(m2);
 
           const preview = L.polygon(
             computeRectCorners(p1, [lat, lng], [lat, lng]),
@@ -740,6 +748,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
           if (exclusionRectMouseMoveHandlerRef.current) { map.off("mousemove", exclusionRectMouseMoveHandlerRef.current); exclusionRectMouseMoveHandlerRef.current = null; }
           if (exclusionRectPreviewRef.current) { exclusionRectPreviewRef.current.remove(); exclusionRectPreviewRef.current = null; }
+          exclusionRectMarkersRef.current.forEach(m => m.remove());
+          exclusionRectMarkersRef.current = [];
           map.off("click", handler);
           exclusionRectClickHandlerRef.current = null;
           map.getContainer().style.cursor = "";
