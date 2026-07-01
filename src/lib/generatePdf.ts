@@ -23,6 +23,7 @@ export interface PdfReportData {
   colSpacing: number;
   location: string;
   projectName: string;
+  exclusionLegend?: { reason: string; color: string }[];
 }
 
 function formatKw(kw: number): string {
@@ -201,6 +202,23 @@ export function buildHtml(
     </div>`;
   }).join("");
 
+  // ── 설치불가 구역 범례 ──
+  const legendItems = (data.exclusionLegend ?? []).filter(e => e.reason);
+  let legendHtml = "";
+  if (legendItems.length > 0) {
+    const legendRowsHtml = legendItems.map((item, i) => {
+      const textId = `ov-legend-text-${i}`;
+      reg({ id: textId, lines: [item.reason], fontSize: 17, fontWeight: 700, color: item.color, align: "left" });
+      return `<div style="display:flex;align-items:center;height:38px;padding:0 14px;box-sizing:border-box;">
+        <div style="width:30px;height:22px;background:${item.color};border-radius:4px;opacity:0.85;flex-shrink:0;margin-right:10px;"></div>
+        <div id="${textId}" style="flex:1;height:22px;"></div>
+      </div>`;
+    }).join("");
+    legendHtml = `<div style="padding:12px 0 4px;">
+      ${legendRowsHtml}
+    </div>`;
+  }
+
   // 로고 (상단 헤더용)
   const logoHtmlHeader = logoDataUrl
     ? `<div style="background:#fff;border-radius:4px;padding:2px 8px;display:inline-flex;align-items:center;height:48px;">
@@ -316,8 +334,8 @@ export function buildHtml(
       </div>
     </div>
 
-    <!-- Spacer -->
-    <div style="flex:1;"></div>
+    <!-- Legend / Spacer -->
+    <div style="flex:1;overflow:hidden;">${legendHtml}</div>
 
     <!-- COMPANY INFO BLOCK -->
     <div style="flex-shrink:0;border:1.5px solid ${BORDER};border-radius:2px;overflow:hidden;">

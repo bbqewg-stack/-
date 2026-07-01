@@ -163,6 +163,16 @@ export default function ModuleLayoutPanel({
       p.height === moduleConfig.moduleHeight &&
       p.wattage === moduleConfig.moduleWattage
     );
+    // 설치불가 구역 범례: 사유별로 중복 없이 수집
+    const seenReasons = new Set<string>();
+    const exclusionLegend: { reason: string; color: string }[] = [];
+    exclusions.forEach(exc => {
+      const reason = exc.reason ?? '';
+      if (reason && !seenReasons.has(reason)) {
+        seenReasons.add(reason);
+        exclusionLegend.push({ reason, color: getExclusionColor(reason) });
+      }
+    });
     return {
       mapImageDataUrl,
       zones: inclusions.map((inc, i) => ({
@@ -184,6 +194,7 @@ export default function ModuleLayoutPanel({
       colSpacing: moduleConfig.colSpacing,
       location,
       projectName,
+      exclusionLegend,
     };
   };
 

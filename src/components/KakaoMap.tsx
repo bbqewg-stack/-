@@ -1173,45 +1173,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         backgroundColor: "#f0f0f0",
       });
 
-      // 사유가 있는 설치불가 구역의 라벨 텍스트를 캡처된 canvas에 직접 드로잉
-      // (html2canvas의 DOM 텍스트 렌더링 버그를 피하기 위해 canvas fillText로 직접 그림 — generatePdf.ts와 동일한 방식)
-      const ctx2 = canvas.getContext("2d");
-      if (ctx2) {
-        // html2canvas는 내부 렌더링 과정(클리핑/마스킹)에서 globalCompositeOperation/transform/alpha를
-        // 기본값이 아닌 상태로 남겨둘 수 있어, 캡처 직후 같은 canvas에 직접 그릴 때는 명시적으로 리셋해야 함
-        ctx2.setTransform(1, 0, 0, 1, 0, 0);
-        ctx2.globalCompositeOperation = "source-over";
-        ctx2.globalAlpha = 1;
-      }
-      if (ctx2) {
-        exclusionPolygonsRef.current.forEach(p => {
-          if (!p.reason) return;
-          const cLat = p.coords.reduce((s, c) => s + c.lat, 0) / p.coords.length;
-          const cLng = p.coords.reduce((s, c) => s + c.lng, 0) / p.coords.length;
-          const pt = map.latLngToContainerPoint([cLat, cLng]);
-          const x = pt.x * SCALE;
-          const y = pt.y * SCALE;
-          const color = getExclusionColor(p.reason);
-          const fontSize = 17 * SCALE;
-          ctx2.font = `700 ${fontSize}px 'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif`;
-          ctx2.textAlign = "center";
-          ctx2.textBaseline = "middle";
-          const textWidth = ctx2.measureText(p.reason).width;
-          const padX = 10 * SCALE, padY = 6 * SCALE;
-          const bw = textWidth + padX * 2, bh = fontSize + padY * 2;
-          // p.angle = CSS rotation deg (CW) → canvas rotation (CW, radians)
-          const rad = (p.angle ?? 0) * Math.PI / 180;
-          ctx2.save();
-          ctx2.translate(x, y);
-          if (rad !== 0) ctx2.rotate(rad);
-          ctx2.fillStyle = color;
-          drawRoundedPill(ctx2, -bw / 2, -bh / 2, bw, bh, bh / 2);
-          ctx2.fill();
-          ctx2.fillStyle = "#fff";
-          ctx2.fillText(p.reason, 0, fontSize * 0.06);
-          ctx2.restore();
-        });
-      }
+      // 설치불가 구역 라벨은 PDF 우측 패널 범례에 표시하므로 지도 위에는 그리지 않음
 
       // Restore styles (modules present → keep zones hidden, else restore)
       const hasModules = moduleLayersRef.current.length > 0;
