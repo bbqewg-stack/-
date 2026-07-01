@@ -315,7 +315,7 @@ export default function ResultPanel({ polygons }: ResultPanelProps) {
       {inclusions.length === 0 && (
         <div className="flex-1 flex items-center justify-center text-gray-400 text-sm text-center">
           지도에서 영역을 그리면<br />분석 결과가 표시됩니다<br />
-          <span className="text-xs mt-1 block">(영역 추가 / 제외 영역 버튼 사용)</span>
+          <span className="text-xs mt-1 block">(영역추가(사각) / 영역제외(사각) 버튼 사용)</span>
         </div>
       )}
     </div>

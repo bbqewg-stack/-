@@ -710,8 +710,8 @@ export default function ModuleLayoutPanel({
 
       {inclusions.length === 0 && (
         <div className="flex-1 flex items-center justify-center text-gray-400 text-sm text-center px-4">
-          지도에서 <strong className="text-blue-500 mx-1">영역 추가</strong> 버튼으로<br />
-          폴리곤을 그리면 모듈이<br />자동으로 배치됩니다
+          지도에서 <strong className="text-teal-600 mx-1">영역추가(사각)</strong> 버튼으로<br />
+          영역을 그리면 모듈이<br />자동으로 배치됩니다
         </div>
       )}
     </div>

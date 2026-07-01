@@ -2,7 +2,7 @@
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from "react";
-import { ModuleConfig, ZoneAdjust, calculateModuleLayout, isCoordInPolygon } from "@/lib/moduleLayout";
+import { ModuleConfig, ZoneAdjust, calculateModuleLayout } from "@/lib/moduleLayout";
 
 interface Coord {
   lat: number;
@@ -356,17 +356,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     polygonsRef.current.forEach((polygonData, zoneIndex) => {
       const zoneColor = getColor(zoneIndex);
 
-      // centroid만 확인하면 제외 구역이 inclusion 경계를 넘어가는 경우 놓침 → 꼭짓점 포함 여부도 확인
-      const relevantExcls = allExclusionCoords.filter((exc) => {
-        const excCentroid: Coord = {
-          lat: exc.reduce((s, c) => s + c.lat, 0) / exc.length,
-          lng: exc.reduce((s, c) => s + c.lng, 0) / exc.length,
-        };
-        return isCoordInPolygon(excCentroid, polygonData.coords) ||
-               exc.some(v => isCoordInPolygon(v, polygonData.coords));
-      });
-
-      const allModules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls, zoneAdjustsRef.current[zoneIndex]);
+      const allModules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, allExclusionCoords, zoneAdjustsRef.current[zoneIndex]);
       const deletedKeys = deletedModuleKeysRef.current[zoneIndex];
       const modules = deletedKeys ? allModules.filter((corners) => !deletedKeys.has(moduleKey(corners))) : allModules;
       counts.push(modules.length);
@@ -1464,38 +1454,19 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       <div className="flex gap-2 p-2 bg-white border-b items-center flex-shrink-0 flex-wrap">
         {!isAnyDrawing && !isPrintAreaMode && !isDragMode ? (
           <>
-            <button onClick={() => startDrawing('inclusion')}
-              className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium">
-              영역 추가
-            </button>
+            {/* 자주 사용하는 주 버튼 */}
             <button onClick={() => startDrawingRect('inclusion')}
               className="px-3 py-2 bg-teal-500 text-white rounded hover:bg-teal-600 text-sm font-medium">
-              직사각형
-            </button>
-            <button onClick={() => startDrawing('exclusion')}
-              className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium">
-              제외 영역
+              영역추가(사각)
             </button>
             <button onClick={startExclusionRect}
               className="px-3 py-2 bg-rose-400 text-white rounded hover:bg-rose-500 text-sm font-medium">
-              제외 사각형
+              영역제외(사각)
             </button>
             {polygonCount > 0 && (
               <button onClick={() => startDragMode()}
                 className="px-3 py-2 bg-amber-500 text-white rounded hover:bg-amber-600 text-sm font-medium">
                 구역 이동
-              </button>
-            )}
-            {polygonCount > 0 && (
-              <button onClick={removeLastPolygon}
-                className="px-3 py-2 bg-orange-400 text-white rounded hover:bg-orange-500 text-sm">
-                영역 삭제
-              </button>
-            )}
-            {exclusionCount > 0 && (
-              <button onClick={removeLastExclusion}
-                className="px-3 py-2 bg-red-300 text-white rounded hover:bg-red-400 text-sm">
-                제외 삭제
               </button>
             )}
             {deleteHistoryCount > 0 && (
@@ -1515,6 +1486,23 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
               }`}>
               {isLocating ? "위치 확인 끄기" : "위치 확인"}
             </button>
+            {/* 구분선 */}
+            <div className="w-px h-6 bg-gray-300 self-center mx-1" />
+            {/* 보조 버튼 (다각형 자유 그리기) */}
+            <button onClick={() => startDrawing('inclusion')}
+              className="px-3 py-2 border border-blue-400 text-blue-600 rounded hover:bg-blue-50 text-sm font-medium">
+              영역 추가
+            </button>
+            <button onClick={() => startDrawing('exclusion')}
+              className="px-3 py-2 border border-red-400 text-red-600 rounded hover:bg-red-50 text-sm font-medium">
+              제외 영역
+            </button>
+            {exclusionCount > 0 && (
+              <button onClick={removeLastExclusion}
+                className="px-3 py-2 border border-red-300 text-red-400 rounded hover:bg-red-50 text-sm">
+                제외 삭제
+              </button>
+            )}
             {/* 인쇄 범위 */}
             <div className="flex items-center gap-1 ml-auto">
               <button
