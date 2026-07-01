@@ -223,6 +223,48 @@ export default function ModuleLayoutPanel({
     setPreviewDataUrl(null);
   };
 
+  const handleOpenProposal = async () => {
+    if (!mapRef?.current || totalModules === 0) return;
+    setPrintState('capturing');
+    try {
+      const { saveProposalData, DEFAULT_PROPOSAL } = await import("@/lib/proposalData");
+      const pdfData = await buildPdfData();
+      const selectedPreset = MODULE_PRESETS.find(p =>
+        p.width === moduleConfig.moduleWidth &&
+        p.height === moduleConfig.moduleHeight &&
+        p.wattage === moduleConfig.moduleWattage
+      );
+      const constructionDefault = Math.round(capacityKw * 130);
+      saveProposalData({
+        ...DEFAULT_PROPOSAL,
+        projectName,
+        location,
+        totalCapacityKw: capacityKw,
+        totalModules,
+        moduleWattage: moduleConfig.moduleWattage,
+        moduleMaker: selectedPreset?.label ?? "",
+        moduleWidth: moduleConfig.moduleWidth,
+        moduleHeight: moduleConfig.moduleHeight,
+        modulesPerString,
+        totalStrings,
+        peakSunHours,
+        systemEfficiency: systemEfficiency / 100,
+        zones: pdfData.zones,
+        mapImageDataUrl: pdfData.mapImageDataUrl,
+        constructionCostWan: constructionDefault,
+        clientName: "",
+        smpBlendedRate: 216,
+        recWeight: 1.5,
+        proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
+      } as import("@/lib/proposalData").ProposalData);
+      window.open("/proposal", "_blank");
+    } catch {
+      alert("제안서 데이터 생성 중 오류가 발생했습니다.");
+    } finally {
+      setPrintState('idle');
+    }
+  };
+
   // ── Save ──
   const handleOpenSave = () => {
     setSaveName(projectName);
@@ -388,15 +430,24 @@ export default function ModuleLayoutPanel({
         </div>
       </div>
 
-      {/* PDF 인쇄 버튼 */}
+      {/* PDF 인쇄 + 사업제안서 버튼 */}
       {mapRef && totalModules > 0 && (
-        <button
-          onClick={handlePrint}
-          disabled={printState !== 'idle'}
-          className="w-full py-2 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
-        >
-          {printState === 'capturing' ? "캡처 중..." : "📄 도면 PDF 인쇄"}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={handlePrint}
+            disabled={printState !== 'idle'}
+            className="w-full py-2 bg-slate-700 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+          >
+            {printState === 'capturing' ? "캡처 중..." : "📄 도면 PDF 인쇄"}
+          </button>
+          <button
+            onClick={handleOpenProposal}
+            disabled={printState !== 'idle'}
+            className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {printState === 'capturing' ? "생성 중..." : "📋 사업제안서 생성"}
+          </button>
+        </div>
       )}
 
       {/* 미리보기 모달 */}
