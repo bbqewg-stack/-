@@ -163,16 +163,8 @@ export default function ModuleLayoutPanel({
       p.height === moduleConfig.moduleHeight &&
       p.wattage === moduleConfig.moduleWattage
     );
-    // 설치불가 구역 범례: 사유별로 중복 없이 수집
-    const seenReasons = new Set<string>();
-    const exclusionLegend: { reason: string; color: string }[] = [];
-    exclusions.forEach(exc => {
-      const reason = exc.reason ?? '';
-      if (reason && !seenReasons.has(reason)) {
-        seenReasons.add(reason);
-        exclusionLegend.push({ reason, color: getExclusionColor(reason) });
-      }
-    });
+    // 설치불가 구역 범례: polygons prop이 stale할 수 있으므로 map ref에서 직접 읽음
+    const exclusionLegend = mapRef?.current?.getExclusionLegend() ?? [];
     return {
       mapImageDataUrl,
       zones: inclusions.map((inc, i) => ({

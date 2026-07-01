@@ -38,6 +38,7 @@ export interface KakaoMapHandle {
   setZoneAdjust: (index: number, adj: ZoneAdjust) => void;
   setExclusionReason: (index: number, reason: string) => void;
   removeExclusionZone: (index: number) => void;
+  getExclusionLegend: () => { reason: string; color: string }[];
   getSaveData: () => SavedPolygon[];
   loadProject: (polygons: SavedPolygon[]) => void;
 }
@@ -1321,6 +1322,18 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       exData.labelMarker.setIcon(L.divIcon({ html: exclusionLabelIconHtml(labelText, color, exData.angle), className: "", iconAnchor: [20, 10] }));
       // polygons prop(onAreasChange)에 reason 변경을 반영해야 buildPdfData가 최신 데이터를 읽음
       notifyAreasRef.current?.();
+    },
+    getExclusionLegend: () => {
+      const seen = new Set<string>();
+      const result: { reason: string; color: string }[] = [];
+      exclusionPolygonsRef.current.forEach(p => {
+        const reason = p.reason ?? '';
+        if (reason && !seen.has(reason)) {
+          seen.add(reason);
+          result.push({ reason, color: getExclusionColor(reason) });
+        }
+      });
+      return result;
     },
     removeExclusionZone: (index: number) => {
       const exData = exclusionPolygonsRef.current[index];
