@@ -483,6 +483,18 @@ export default function ModuleLayoutPanel({
         </div>
       )}
 
+      {/* 독립 제안서 작성 버튼 (배치 없이도 사용 가능) */}
+      <div className="border-t pt-3 mt-1">
+        <a
+          href="/proposal/new"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-1.5 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-sm font-medium transition-colors border border-slate-300"
+        >
+          ✏️ 직접 입력 제안서 작성
+        </a>
+      </div>
+
       {/* 미리보기 모달 */}
       {printState === 'preview' && previewDataUrl && (
         <div
