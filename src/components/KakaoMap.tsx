@@ -57,9 +57,9 @@ function getColor(index: number) {
 
 // 설치불가 구역 사유별 색상 (미지정/직접입력은 기존 제외영역 빨강 유지)
 const EXCLUSION_REASON_COLORS: Record<string, string> = {
-  "음영 간섭 구간 설치불가": "#f59e0b",
+  "음영간섭 구간 설치불가": "#f59e0b",
+  "현장확인 필요": "#3b82f6",
   "지장물 간섭 구간 설치불가": "#9333ea",
-  "진입로 확보 구간 설치불가": "#0891b2",
 };
 const DEFAULT_EXCLUSION_COLOR = "#e53e3e";
 export const EXCLUSION_REASON_PRESETS = Object.keys(EXCLUSION_REASON_COLORS);
@@ -252,10 +252,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const printClickHandlerRef = useRef<any>(null);
 
-  // 설치불가(제외) 구역 2클릭 직사각형 (반대편 모서리 2점, 회전 없음)
+  // 설치불가(제외) 구역 3클릭 회전 직사각형 (직사각형 도구와 동일 패턴)
   const [isExclusionRectMode, setIsExclusionRectMode] = useState(false);
-  const [exclusionRectPhase, setExclusionRectPhase] = useState(0); // 0=idle, 1=P1 set
+  const [exclusionRectPhase, setExclusionRectPhase] = useState(0); // 0=idle, 1=P1 set, 2=P2 set
+  const exclusionRectPhaseRef = useRef(0);
   const exclusionRectP1Ref = useRef<[number, number] | null>(null);
+  const exclusionRectP2Ref = useRef<[number, number] | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exclusionRectPreviewRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -328,12 +330,14 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     polygonsRef.current.forEach((polygonData, zoneIndex) => {
       const zoneColor = getColor(zoneIndex);
 
+      // centroid만 확인하면 제외 구역이 inclusion 경계를 넘어가는 경우 놓침 → 꼭짓점 포함 여부도 확인
       const relevantExcls = allExclusionCoords.filter((exc) => {
         const excCentroid: Coord = {
           lat: exc.reduce((s, c) => s + c.lat, 0) / exc.length,
           lng: exc.reduce((s, c) => s + c.lng, 0) / exc.length,
         };
-        return isCoordInPolygon(excCentroid, polygonData.coords);
+        return isCoordInPolygon(excCentroid, polygonData.coords) ||
+               exc.some(v => isCoordInPolygon(v, polygonData.coords));
       });
 
       const allModules = calculateModuleLayout(polygonData.coords, { ...config, angle: polygonData.angle }, relevantExcls, zoneAdjustsRef.current[zoneIndex]);
@@ -666,7 +670,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   useEffect(() => { notifyAreasRef.current = notifyAreas; }, [notifyAreas]);
   useEffect(() => { renderModulesRef.current = renderModules; }, [renderModules]);
 
-  // --- 설치불가(제외) 구역: 반대편 모서리 2클릭으로 회전 없는 직사각형 생성 ---
+  // --- 설치불가(제외) 구역: 3클릭 회전 직사각형 (직사각형 도구와 동일 패턴) ---
   const cancelExclusionRect = useCallback(() => {
     const map = mapInstanceRef.current;
     if (map) {
@@ -676,6 +680,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     }
     if (exclusionRectPreviewRef.current) { exclusionRectPreviewRef.current.remove(); exclusionRectPreviewRef.current = null; }
     exclusionRectP1Ref.current = null;
+    exclusionRectP2Ref.current = null;
+    exclusionRectPhaseRef.current = 0;
     setExclusionRectPhase(0);
     setIsExclusionRectMode(false);
   }, []);
@@ -689,36 +695,48 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     setIsLocating(false);
     setIsExclusionRectMode(true);
     exclusionRectP1Ref.current = null;
+    exclusionRectP2Ref.current = null;
+    exclusionRectPhaseRef.current = 0;
     setExclusionRectPhase(0);
     map.getContainer().style.cursor = "crosshair";
     import("leaflet").then((L) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const handler = (e: any) => {
         const { lat, lng } = e.latlng;
-        if (!exclusionRectP1Ref.current) {
+        const phase = exclusionRectPhaseRef.current;
+
+        if (phase === 0) {
+          // P1: 첫 번째 꼭짓점
           exclusionRectP1Ref.current = [lat, lng];
+          exclusionRectPhaseRef.current = 1;
           setExclusionRectPhase(1);
-          const preview = L.rectangle([[lat, lng], [lat, lng]], {
-            color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.15, dashArray: "6,4", interactive: false,
-          }).addTo(map);
+
+        } else if (phase === 1) {
+          // P2: 인접 꼭짓점 (엣지 방향 결정)
+          const p1 = exclusionRectP1Ref.current!;
+          exclusionRectP2Ref.current = [lat, lng];
+          exclusionRectPhaseRef.current = 2;
+          setExclusionRectPhase(2);
+
+          const preview = L.polygon(
+            computeRectCorners(p1, [lat, lng], [lat, lng]),
+            { color: "#e53e3e", weight: 2, fillColor: "#e53e3e", fillOpacity: 0.15, dashArray: "6,4", interactive: false }
+          ).addTo(map);
           exclusionRectPreviewRef.current = preview;
+
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mmHandler = (me: any) => {
-            const p1 = exclusionRectP1Ref.current!;
-            const bounds: [[number, number], [number, number]] = [
-              [Math.min(p1[0], me.latlng.lat), Math.min(p1[1], me.latlng.lng)],
-              [Math.max(p1[0], me.latlng.lat), Math.max(p1[1], me.latlng.lng)],
-            ];
-            preview.setBounds(bounds);
+            const corners = computeRectCorners(exclusionRectP1Ref.current!, exclusionRectP2Ref.current!, [me.latlng.lat, me.latlng.lng]);
+            preview.setLatLngs(corners);
           };
           map.on("mousemove", mmHandler);
           exclusionRectMouseMoveHandlerRef.current = mmHandler;
-        } else {
-          const p1 = exclusionRectP1Ref.current;
-          const bounds: [[number, number], [number, number]] = [
-            [Math.min(p1[0], lat), Math.min(p1[1], lng)],
-            [Math.max(p1[0], lat), Math.max(p1[1], lng)],
-          ];
+
+        } else if (phase === 2) {
+          // P3: 너비 확정 → 직사각형 완성
+          const p1 = exclusionRectP1Ref.current!;
+          const p2 = exclusionRectP2Ref.current!;
+          const corners = computeRectCorners(p1, p2, [lat, lng]);
 
           if (exclusionRectMouseMoveHandlerRef.current) { map.off("mousemove", exclusionRectMouseMoveHandlerRef.current); exclusionRectMouseMoveHandlerRef.current = null; }
           if (exclusionRectPreviewRef.current) { exclusionRectPreviewRef.current.remove(); exclusionRectPreviewRef.current = null; }
@@ -726,16 +744,12 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           exclusionRectClickHandlerRef.current = null;
           map.getContainer().style.cursor = "";
           setIsExclusionRectMode(false);
+          exclusionRectPhaseRef.current = 0;
           setExclusionRectPhase(0);
           exclusionRectP1Ref.current = null;
+          exclusionRectP2Ref.current = null;
 
-          const [[south, west], [north, east]] = bounds;
-          const coords: Coord[] = [
-            { lat: north, lng: west },
-            { lat: north, lng: east },
-            { lat: south, lng: east },
-            { lat: south, lng: west },
-          ];
+          const coords = corners.map(([cLat, cLng]) => ({ lat: cLat, lng: cLng }));
           addExclusionZone(L, map, coords);
           notifyAreas();
         }
@@ -1113,7 +1127,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           const x = pt.x * SCALE;
           const y = pt.y * SCALE;
           const color = getExclusionColor(p.reason);
-          const fontSize = 13 * SCALE;
+          const fontSize = 17 * SCALE;
           ctx2.font = `700 ${fontSize}px 'Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',sans-serif`;
           ctx2.textAlign = "center";
           ctx2.textBaseline = "middle";
@@ -1487,7 +1501,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
             <button onClick={cancelExclusionRect}
               className="px-3 py-2 bg-yellow-400 text-white rounded hover:bg-yellow-500 text-sm">취소</button>
             <span className="text-xs text-rose-500 font-medium">
-              {exclusionRectPhase === 0 ? "① 첫 번째 모서리 클릭" : "② 반대쪽 모서리 클릭"}
+              {exclusionRectPhase === 0 ? "① 첫 번째 꼭짓점 클릭" : exclusionRectPhase === 1 ? "② 인접 꼭짓점 클릭 (방향 설정)" : "③ 마우스 이동 후 클릭 (너비 설정)"}
             </span>
           </>
         ) : isDrawing ? (

@@ -165,16 +165,16 @@ export function calculateModuleLayout(
       } else if (isXExtended) {
         // 좌(left)/우(right) 확장 열 (polygon Y 범위 내): polygon 체크 생략, maxPerCol 적용
         if (placedInCol >= maxPerCol) continue;
+        placedInCol++; // 제외 구역 슬롯도 열 한도에 포함 (아래로 밀리는 버그 방지)
         if (exclTest(corners, center)) continue;
-        placedInCol++;
       } else {
         // 일반 polygon 셀: 중심점 기준 판정 + maxPerCol 적용
         // (모서리 4개 전부 포함을 요구하면 경계가 휘어진 구간에서 줄 전체가 탈락해
         //  확장 영역과 끊어진 것처럼 보이는 원인이 됨 → 중심점 포함으로 완화)
         if (placedInCol >= maxPerCol) continue;
         if (!inPoly2D(center, poly)) continue;
+        placedInCol++; // 제외 구역 슬롯도 열 한도에 포함 (아래로 밀리는 버그 방지)
         if (exclTest(corners, center)) continue;
-        placedInCol++;
       }
 
       result.push(corners.map((c) => fromXY(rot(c, mathAngle), origin)));
