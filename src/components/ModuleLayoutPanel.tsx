@@ -97,8 +97,8 @@ export default function ModuleLayoutPanel({
   onLoadProject,
   externalLocation,
 }: ModuleLayoutPanelProps) {
-  const [peakSunHours, setPeakSunHours] = useState(3.5);
-  const [systemEfficiency, setSystemEfficiency] = useState(85);
+  const [peakSunHours, setPeakSunHours] = useState(3.6);
+  const [systemEfficiency, setSystemEfficiency] = useState(100);
   const [modulesPerString, setModulesPerString] = useState(15);
   const [printState, setPrintState] = useState<'idle' | 'capturing' | 'preview'>('idle');
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
@@ -255,11 +255,11 @@ export default function ModuleLayoutPanel({
       })),
       mapImageDataUrl: "",
       // defaults — user can change in proposal edit panel
-      constructionUnitPriceWan: 130,
+      constructionUnitPriceWan: 95,
       clientName: "",
-      smpRate: 120,
-      recRate: 64,
-      recWeight: 1.5,
+      smpRate: 126,
+      recRate: 72,
+      recWeight: 1,
       proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
     };
 
