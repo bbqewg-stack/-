@@ -3,6 +3,7 @@
 import { useState, RefObject, useCallback, useEffect } from "react";
 import { ModuleConfig, ZoneAdjust, MODULE_LAYOUT_LIMIT } from "@/lib/moduleLayout";
 import { KakaoMapHandle, SavedPolygon, EXCLUSION_REASON_PRESETS, getExclusionColor } from "@/components/KakaoMap";
+import { saveProposalData, DEFAULT_PROPOSAL, ProposalData } from "@/lib/proposalData";
 
 interface Coord {
   lat: number;
@@ -225,45 +226,56 @@ export default function ModuleLayoutPanel({
 
   const handleOpenProposal = async () => {
     if (!mapRef?.current || totalModules === 0) return;
-    // open window immediately (must be synchronous from user gesture to avoid popup blocker)
-    const proposalWindow = window.open("/proposal", "_blank");
+
+    const selectedPreset = MODULE_PRESETS.find(p =>
+      p.width === moduleConfig.moduleWidth &&
+      p.height === moduleConfig.moduleHeight &&
+      p.wattage === moduleConfig.moduleWattage
+    );
+    const constructionDefault = Math.round(capacityKw * 130);
+    const baseData: ProposalData = {
+      ...(DEFAULT_PROPOSAL as ProposalData),
+      projectName,
+      location,
+      totalCapacityKw: capacityKw,
+      totalModules,
+      moduleWattage: moduleConfig.moduleWattage,
+      moduleMaker: selectedPreset?.label ?? "",
+      moduleWidth: moduleConfig.moduleWidth,
+      moduleHeight: moduleConfig.moduleHeight,
+      modulesPerString,
+      totalStrings,
+      peakSunHours,
+      systemEfficiency: systemEfficiency / 100,
+      zones: inclusions.map((inc, i) => ({
+        label: zoneLabels?.[i] ?? String.fromCharCode(65 + i) + "구역",
+        color: POLYGON_COLORS[i % POLYGON_COLORS.length],
+        moduleCount: adjustedCounts[i] ?? 0,
+        capacityKw: ((adjustedCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
+        angle: inc.angle ?? 0,
+      })),
+      mapImageDataUrl: "",   // filled in after capture
+      constructionCostWan: constructionDefault,
+      clientName: "",
+      smpBlendedRate: 216,
+      recWeight: 1.5,
+      proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
+    };
+
+    // 1) Save data synchronously (no await yet) so the new tab can read it immediately
+    saveProposalData(baseData);
+
+    // 2) Open the new tab synchronously (in user-gesture context, no popup block)
+    window.open("/proposal", "_blank");
+
+    // 3) Capture map image in background and update localStorage
     setPrintState('capturing');
     try {
-      const { saveProposalData, DEFAULT_PROPOSAL } = await import("@/lib/proposalData");
-      const pdfData = await buildPdfData();
-      const selectedPreset = MODULE_PRESETS.find(p =>
-        p.width === moduleConfig.moduleWidth &&
-        p.height === moduleConfig.moduleHeight &&
-        p.wattage === moduleConfig.moduleWattage
-      );
-      const constructionDefault = Math.round(capacityKw * 130);
-      saveProposalData({
-        ...DEFAULT_PROPOSAL,
-        projectName,
-        location,
-        totalCapacityKw: capacityKw,
-        totalModules,
-        moduleWattage: moduleConfig.moduleWattage,
-        moduleMaker: selectedPreset?.label ?? "",
-        moduleWidth: moduleConfig.moduleWidth,
-        moduleHeight: moduleConfig.moduleHeight,
-        modulesPerString,
-        totalStrings,
-        peakSunHours,
-        systemEfficiency: systemEfficiency / 100,
-        zones: pdfData.zones,
-        mapImageDataUrl: pdfData.mapImageDataUrl,
-        constructionCostWan: constructionDefault,
-        clientName: "",
-        smpBlendedRate: 216,
-        recWeight: 1.5,
-        proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
-      } as import("@/lib/proposalData").ProposalData);
-      // reload the already-opened window after data is saved to localStorage
-      if (proposalWindow) proposalWindow.location.reload();
+      const mapImageDataUrl = await mapRef.current.captureMapImage();
+      saveProposalData({ ...baseData, mapImageDataUrl });
+      // storage event fires in the new tab automatically — no reload needed
     } catch {
-      if (proposalWindow) proposalWindow.close();
-      alert("제안서 데이터 생성 중 오류가 발생했습니다.");
+      // map capture failed; proposal page still works without map image
     } finally {
       setPrintState('idle');
     }

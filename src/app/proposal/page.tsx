@@ -667,22 +667,29 @@ export default function ProposalPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    // Poll for data — the parent tab saves to localStorage after opening this tab,
-    // so we retry for up to ~5 seconds before giving up.
-    let tries = 0;
-    const poll = () => {
-      const saved = loadProposalData();
-      if (saved) {
-        setData(saved);
-        return;
-      }
-      if (tries++ < 25) {
-        setTimeout(poll, 200);
-      } else {
-        setNotFound(true);
+    // Data is saved before window.open, so it should be available immediately.
+    // Also listen for storage events so map image (saved async after capture) updates live.
+    const initial = loadProposalData();
+    if (initial) {
+      setData(initial);
+    } else {
+      // Fallback: wait a bit in case of race condition
+      const t = setTimeout(() => {
+        const saved = loadProposalData();
+        if (saved) setData(saved);
+        else setNotFound(true);
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+
+    // Listen for map image update from parent tab
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "solar_proposal_draft" && e.newValue) {
+        try { setData(JSON.parse(e.newValue)); } catch {}
       }
     };
-    poll();
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const handleChange = useCallback((updated: ProposalData) => {
