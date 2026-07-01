@@ -232,7 +232,6 @@ export default function ModuleLayoutPanel({
       p.height === moduleConfig.moduleHeight &&
       p.wattage === moduleConfig.moduleWattage
     );
-    const constructionDefault = Math.round(capacityKw * 130);
     const baseData: ProposalData = {
       ...(DEFAULT_PROPOSAL as ProposalData),
       projectName,
@@ -254,10 +253,12 @@ export default function ModuleLayoutPanel({
         capacityKw: ((adjustedCounts[i] ?? 0) * moduleConfig.moduleWattage) / 1000,
         angle: inc.angle ?? 0,
       })),
-      mapImageDataUrl: "",   // filled in after capture
-      constructionCostWan: constructionDefault,
+      mapImageDataUrl: "",
+      // defaults — user can change in proposal edit panel
+      constructionUnitPriceWan: 130,
       clientName: "",
-      smpBlendedRate: 216,
+      smpRate: 120,
+      recRate: 64,
       recWeight: 1.5,
       proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
     };

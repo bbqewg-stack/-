@@ -25,10 +25,11 @@ export interface ProposalData {
   mapImageDataUrl: string;
   // editable
   clientName: string;
-  smpBlendedRate: number;
-  constructionCostWan: number;
+  smpRate: number;              // SMP 단가 (원/kWh)
+  recRate: number;              // REC 단가 (원/kWh)
+  recWeight: number;            // REC 가중치 (recRate에만 적용)
+  constructionUnitPriceWan: number; // 공사 단가 (만원/kW)
   proposalDate: string;
-  recWeight: number;
   // company
   companyName: string;
   companyTel: string;
@@ -41,8 +42,10 @@ export interface ProposalData {
 
 export const DEFAULT_PROPOSAL: Partial<ProposalData> = {
   clientName: "",
-  smpBlendedRate: 216,
+  smpRate: 120,
+  recRate: 64,
   recWeight: 1.5,
+  constructionUnitPriceWan: 130,
   proposalDate: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long" }),
   companyName: "주식회사 티앤이",
   companyTel: "055-291-5567",
@@ -53,19 +56,27 @@ export const DEFAULT_PROPOSAL: Partial<ProposalData> = {
   companyLicense: "제 경남-02113 호",
 };
 
+export function calcBlendedRate(data: Pick<ProposalData, "smpRate" | "recRate" | "recWeight">): number {
+  return data.smpRate + data.recRate * data.recWeight;
+}
+
+export function calcConstructionCostWan(data: Pick<ProposalData, "constructionUnitPriceWan" | "totalCapacityKw">): number {
+  return Math.round(data.constructionUnitPriceWan * data.totalCapacityKw);
+}
+
 export function calcAnnualGenerationKwh(data: Pick<ProposalData, "totalCapacityKw" | "peakSunHours" | "systemEfficiency">): number {
   return data.totalCapacityKw * data.peakSunHours * 365 * data.systemEfficiency;
 }
 
-export function calcAnnualRevenueWan(data: Pick<ProposalData, "totalCapacityKw" | "peakSunHours" | "systemEfficiency" | "smpBlendedRate">): number {
+export function calcAnnualRevenueWan(data: Pick<ProposalData, "totalCapacityKw" | "peakSunHours" | "systemEfficiency" | "smpRate" | "recRate" | "recWeight">): number {
   const kwh = calcAnnualGenerationKwh(data);
-  return Math.round((kwh * data.smpBlendedRate) / 10000);
+  return Math.round((kwh * calcBlendedRate(data)) / 10000);
 }
 
-export function calcBreakevenYear(data: Pick<ProposalData, "totalCapacityKw" | "peakSunHours" | "systemEfficiency" | "smpBlendedRate" | "constructionCostWan">): number {
+export function calcBreakevenYear(data: Pick<ProposalData, "totalCapacityKw" | "peakSunHours" | "systemEfficiency" | "smpRate" | "recRate" | "recWeight" | "constructionUnitPriceWan">): number {
   const annualWan = calcAnnualRevenueWan(data);
   if (annualWan <= 0) return 0;
-  return Math.ceil(data.constructionCostWan / annualWan);
+  return Math.ceil(calcConstructionCostWan(data) / annualWan);
 }
 
 export function saveProposalData(data: ProposalData): void {

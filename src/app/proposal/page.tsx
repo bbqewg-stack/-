@@ -9,6 +9,8 @@ import {
   calcAnnualGenerationKwh,
   calcAnnualRevenueWan,
   calcBreakevenYear,
+  calcBlendedRate,
+  calcConstructionCostWan,
 } from "@/lib/proposalData";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -44,7 +46,8 @@ const inputCls = "w-full bg-slate-700 text-white text-sm rounded px-2 py-1.5 out
 
 function EditSidebar({ data, onChange }: { data: ProposalData; onChange: (d: ProposalData) => void }) {
   const set = (patch: Partial<ProposalData>) => onChange({ ...data, ...patch });
-  const constructionDefault = Math.round(data.totalCapacityKw * 130);
+  const blended = calcBlendedRate(data);
+  const totalCost = calcConstructionCostWan(data);
 
   return (
     <div className="no-print fixed top-12 right-0 bottom-0 w-72 bg-slate-800 text-white overflow-y-auto p-4 z-40 border-l border-slate-700 shadow-2xl">
@@ -64,18 +67,24 @@ function EditSidebar({ data, onChange }: { data: ProposalData; onChange: (d: Pro
       </Field>
 
       <hr className="border-slate-600 my-4" />
-      <p className="text-xs font-bold text-slate-300 mb-3 uppercase tracking-widest">수익 분석 설정</p>
+      <p className="text-xs font-bold text-slate-300 mb-3 uppercase tracking-widest">수익 분석</p>
 
-      <Field label={`SMP+REC 통합 단가 (원/kWh) — 현재 ${data.smpBlendedRate}원`}>
-        <input className={inputCls} type="number" value={data.smpBlendedRate} onChange={e => set({ smpBlendedRate: +e.target.value })} />
+      <Field label="SMP 단가 (원/kWh)">
+        <input className={inputCls} type="number" value={data.smpRate} onChange={e => set({ smpRate: +e.target.value })} />
+      </Field>
+      <Field label="REC 단가 (원/kWh)">
+        <input className={inputCls} type="number" value={data.recRate} onChange={e => set({ recRate: +e.target.value })} />
       </Field>
       <Field label="REC 가중치">
         <input className={inputCls} type="number" step="0.1" value={data.recWeight} onChange={e => set({ recWeight: +e.target.value })} />
       </Field>
-      <Field label={`예상 공사금액 (만원) — 기본 ${constructionDefault.toLocaleString("ko")}만원`}>
-        <input className={inputCls} type="number" value={data.constructionCostWan}
-          onChange={e => set({ constructionCostWan: +e.target.value })}
-          placeholder={constructionDefault.toString()} />
+      <div className="mb-3 p-2 bg-slate-700 rounded text-xs text-slate-300">
+        적용 단가: {data.smpRate} + {data.recRate} × {data.recWeight} = <span className="text-white font-bold">{blended.toFixed(1)}원/kWh</span>
+      </div>
+
+      <Field label={`공사 단가 (만원/kW) → 총 ${totalCost.toLocaleString("ko")}만원`}>
+        <input className={inputCls} type="number" value={data.constructionUnitPriceWan}
+          onChange={e => set({ constructionUnitPriceWan: +e.target.value })} />
       </Field>
       <Field label="일평균 일조시간 (h)">
         <input className={inputCls} type="number" step="0.1" value={data.peakSunHours} onChange={e => set({ peakSunHours: +e.target.value })} />
@@ -218,9 +227,8 @@ function ExecutiveSummaryPage({ data }: { data: ProposalData }) {
   const annualWan = calcAnnualRevenueWan(data);
   const breakevenYr = calcBreakevenYear(data);
   const twentyYrWan = annualWan * 20;
-  const roi20 = data.constructionCostWan > 0
-    ? Math.round((twentyYrWan / data.constructionCostWan) * 100)
-    : 0;
+  const cost = calcConstructionCostWan(data);
+  const roi20 = cost > 0 ? Math.round((twentyYrWan / cost) * 100) : 0;
 
   return (
     <Page>
@@ -229,7 +237,7 @@ function ExecutiveSummaryPage({ data }: { data: ProposalData }) {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <KpiCard label="설치 용량" value={fmtKw(data.totalCapacityKw)} sub={`모듈 ${data.totalModules.toLocaleString("ko")}장`} accent />
         <KpiCard label="연간 예상 발전량" value={fmtKwh(annualKwh)} sub={`일조 ${data.peakSunHours}h/일 기준`} />
-        <KpiCard label="연평균 예상 수익" value={fmtWan(annualWan)} sub={`단가 ${data.smpBlendedRate}원/kWh`} />
+        <KpiCard label="연평균 예상 수익" value={fmtWan(annualWan)} sub={`단가 ${calcBlendedRate(data).toFixed(1)}원/kWh`} />
         <KpiCard label="투자 회수 기간" value={`${breakevenYr}년`} sub={`20년 누적 ${fmtWan(twentyYrWan)}`} accent />
       </div>
 
@@ -259,7 +267,7 @@ function ExecutiveSummaryPage({ data }: { data: ProposalData }) {
             {[
               ["모듈 사양", data.moduleMaker || `${data.moduleWattage}W`],
               ["총 모듈 수", `${data.totalModules.toLocaleString("ko")} 장`],
-              ["예상 공사금액", fmtWan(data.constructionCostWan)],
+              ["예상 공사금액", fmtWan(cost)],
               ["20년 누적 수익", fmtWan(twentyYrWan)],
               ["20년 투자수익률", `${roi20}%`],
             ].map(([k, v], i) => (
@@ -402,7 +410,8 @@ function RevenuePage({ data }: { data: ProposalData }) {
   const annualWan = calcAnnualRevenueWan(data);
   const annualKwh = calcAnnualGenerationKwh(data);
   const breakevenYr = calcBreakevenYear(data);
-  const cost = data.constructionCostWan;
+  const cost = calcConstructionCostWan(data);
+  const blended = calcBlendedRate(data);
 
   const rows = [1, 2, 3, 5, 7, 10, 12, 15, 17, 20];
 
@@ -413,7 +422,7 @@ function RevenuePage({ data }: { data: ProposalData }) {
       {/* Summary row */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         {[
-          { k: "SMP+REC 단가", v: `${data.smpBlendedRate}원/kWh`, sub: `가중치 ${data.recWeight}` },
+          { k: "SMP+REC 적용 단가", v: `${blended.toFixed(1)}원/kWh`, sub: `SMP ${data.smpRate} + REC ${data.recRate}×${data.recWeight}` },
           { k: "연간 예상 발전량", v: fmtKwh(annualKwh), sub: `${data.peakSunHours}h × 365일` },
           { k: "연평균 예상 수익", v: fmtWan(annualWan), sub: "순수익 (세전)" },
           { k: "예상 공사금액", v: fmtWan(cost), sub: "VAT 별도" },
@@ -484,7 +493,7 @@ function RevenuePage({ data }: { data: ProposalData }) {
           <div className="mt-4 p-3 bg-navy rounded-lg text-white text-center">
             <p className="text-xs text-blue-200">20년 누적 수익</p>
             <p className="text-xl font-black mt-1">{fmtWan(annualWan * 20)}</p>
-            <p className="text-xs text-blue-200 mt-1">투자수익률 {data.constructionCostWan > 0 ? Math.round((annualWan * 20 / data.constructionCostWan) * 100) : 0}%</p>
+            <p className="text-xs text-blue-200 mt-1">투자수익률 {cost > 0 ? Math.round((annualWan * 20 / cost) * 100) : 0}%</p>
           </div>
         </div>
       </div>
@@ -513,9 +522,9 @@ function BusinessOverviewPage({ data }: { data: ProposalData }) {
             실시간 전력시장의 수요·공급에 따라 변동됩니다.
           </p>
           <div className="mt-4 bg-blue-50 rounded-lg p-3">
-            <p className="text-xs text-slate-500">현재 적용 단가</p>
-            <p className="text-2xl font-black text-blue-600">{data.smpBlendedRate}원<span className="text-sm font-normal text-slate-400">/kWh</span></p>
-            <p className="text-xs text-slate-400 mt-1">REC 가중치 {data.recWeight} 포함</p>
+            <p className="text-xs text-slate-500">적용 SMP 단가</p>
+            <p className="text-2xl font-black text-blue-600">{data.smpRate}원<span className="text-sm font-normal text-slate-400">/kWh</span></p>
+            <p className="text-xs text-slate-400 mt-1">SMP + REC({data.recRate}원 × {data.recWeight}) = {calcBlendedRate(data).toFixed(1)}원/kWh</p>
           </div>
         </div>
         <div className="border border-slate-200 rounded-xl p-5">
@@ -604,7 +613,7 @@ function ConstructionPage({ data }: { data: ProposalData }) {
                   if (best.n50 > 0) parts.push(`50kW × ${best.n50}대`);
                   return parts.join(" / ") || "-";
                 })()],
-                ["예상 공사금액", fmtWan(data.constructionCostWan) + " (VAT 별도)"],
+                ["예상 공사금액", fmtWan(calcConstructionCostWan(data)) + " (VAT 별도)"],
               ].map(([k, v], i) => (
                 <tr key={i} className={i % 2 === 0 ? "bg-slate-50" : "bg-white"}>
                   <td className="py-2.5 px-3 text-xs text-slate-500 font-semibold border border-slate-200 w-32 align-top">{k}</td>
