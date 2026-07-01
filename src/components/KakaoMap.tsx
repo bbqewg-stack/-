@@ -69,8 +69,29 @@ export function getExclusionColor(reason?: string): string {
   return DEFAULT_EXCLUSION_COLOR;
 }
 
-function exclusionLabelIconHtml(text: string, color: string): string {
-  return `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">${text}</div>`;
+// 제외 구역 라벨 CSS 회전각 계산 (폴리곤 가장 긴 엣지 기준, -90~90° 범위로 정규화)
+function detectExclusionLabelAngle(coords: Coord[]): number {
+  if (coords.length < 2) return 0;
+  const avgLat = coords.reduce((s, c) => s + c.lat, 0) / coords.length;
+  const cosLat = Math.cos(avgLat * Math.PI / 180);
+  let bestLen = 0, bestMathAngle = 0;
+  for (let i = 0; i < coords.length; i++) {
+    const j = (i + 1) % coords.length;
+    const dx = (coords[j].lng - coords[i].lng) * cosLat;
+    const dy = coords[j].lat - coords[i].lat;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > bestLen) { bestLen = len; bestMathAngle = Math.atan2(dy, dx) * 180 / Math.PI; }
+  }
+  // math angle(CCW from East) → CSS rotation(CW), normalize to [-90,90] for readability
+  let cssAngle = -bestMathAngle;
+  if (cssAngle > 90) cssAngle -= 180;
+  if (cssAngle < -90) cssAngle += 180;
+  return Math.round(cssAngle * 10) / 10;
+}
+
+function exclusionLabelIconHtml(text: string, color: string, angle: number = 0): string {
+  const rotate = angle !== 0 ? `transform:rotate(${angle}deg);transform-origin:center;` : '';
+  return `<div style="background:${color};color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);${rotate}">${text}</div>`;
 }
 
 function drawRoundedPill(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -473,13 +494,15 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     const centroid = getCentroid(latLngs);
     const color = getExclusionColor(reason);
     const labelText = reason || `제외 ${exIdx}`;
+    const labelAngle = detectExclusionLabelAngle(coords);
     const polygon = L.polygon(latLngs, {
       color, weight: 2, fillColor: color, fillOpacity: 0.3, dashArray: "6,4",
       renderer: exclusionRendererRef.current,
     }).addTo(map);
-    const labelIcon = L.divIcon({ html: exclusionLabelIconHtml(labelText, color), className: "", iconAnchor: [20, 10] });
+    const labelIcon = L.divIcon({ html: exclusionLabelIconHtml(labelText, color, labelAngle), className: "", iconAnchor: [20, 10] });
     const labelMarker = L.marker(centroid, { icon: labelIcon, interactive: false }).addTo(map);
-    exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: 0, label: labelText, reason }];
+    // angle 필드에 라벨 CSS 회전각 저장 (inclusion과 달리 모듈 배치에 사용 안 됨)
+    exclusionPolygonsRef.current = [...exclusionPolygonsRef.current, { leafletPolygon: polygon, labelMarker, area, coords, angle: labelAngle, label: labelText, reason }];
     setExclusionCount(exclusionPolygonsRef.current.length);
   }, []);
 
@@ -1144,11 +1167,17 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
           const textWidth = ctx2.measureText(p.reason).width;
           const padX = 10 * SCALE, padY = 6 * SCALE;
           const bw = textWidth + padX * 2, bh = fontSize + padY * 2;
+          // p.angle = CSS rotation deg (CW) → canvas rotation (CW, radians)
+          const rad = (p.angle ?? 0) * Math.PI / 180;
+          ctx2.save();
+          ctx2.translate(x, y);
+          if (rad !== 0) ctx2.rotate(rad);
           ctx2.fillStyle = color;
-          drawRoundedPill(ctx2, x - bw / 2, y - bh / 2, bw, bh, bh / 2);
+          drawRoundedPill(ctx2, -bw / 2, -bh / 2, bw, bh, bh / 2);
           ctx2.fill();
           ctx2.fillStyle = "#fff";
-          ctx2.fillText(p.reason, x, y + fontSize * 0.06);
+          ctx2.fillText(p.reason, 0, fontSize * 0.06);
+          ctx2.restore();
         });
       }
 
@@ -1290,7 +1319,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       exData.reason = reason;
       exData.label = labelText;
       exData.leafletPolygon.setStyle({ color, fillColor: color });
-      exData.labelMarker.setIcon(L.divIcon({ html: exclusionLabelIconHtml(labelText, color), className: "", iconAnchor: [20, 10] }));
+      exData.labelMarker.setIcon(L.divIcon({ html: exclusionLabelIconHtml(labelText, color, exData.angle), className: "", iconAnchor: [20, 10] }));
     },
     removeExclusionZone: (index: number) => {
       const exData = exclusionPolygonsRef.current[index];
