@@ -1319,6 +1319,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       exData.label = labelText;
       exData.leafletPolygon.setStyle({ color, fillColor: color });
       exData.labelMarker.setIcon(L.divIcon({ html: exclusionLabelIconHtml(labelText, color, exData.angle), className: "", iconAnchor: [20, 10] }));
+      // polygons prop(onAreasChange)에 reason 변경을 반영해야 buildPdfData가 최신 데이터를 읽음
+      notifyAreasRef.current?.();
     },
     removeExclusionZone: (index: number) => {
       const exData = exclusionPolygonsRef.current[index];
