@@ -466,7 +466,7 @@ export default function ModuleLayoutPanel({
         </div>
       </div>
 
-      {/* 배치 설정 */}
+      {/* 배치 설정 + 전기 결선 */}
       <div className="bg-white border rounded-lg p-4">
         <p className="text-xs font-semibold text-gray-600 mb-3">배치 설정</p>
         <div className="space-y-2.5">
@@ -488,28 +488,16 @@ export default function ModuleLayoutPanel({
               <span className="text-xs text-gray-400">장</span>
             </div>
           </LabelRow>
-        </div>
-      </div>
-
-      {/* 발전량 파라미터 */}
-      <div className="bg-white border rounded-lg p-4">
-        <p className="text-xs font-semibold text-gray-600 mb-3">발전량 파라미터</p>
-        <div className="space-y-3">
-          <SliderParam label={`일평균 일조시간 ${peakSunHours}h`} min={2.5} max={5} step={0.1} value={peakSunHours} onChange={setPeakSunHours} />
-          <SliderParam label={`시스템 효율 ${systemEfficiency}%`} min={70} max={95} step={1} value={systemEfficiency} onChange={setSystemEfficiency} />
-        </div>
-      </div>
-
-      {/* 전기 결선 설정 */}
-      <div className="bg-white border rounded-lg p-4">
-        <p className="text-xs font-semibold text-gray-600 mb-3">전기 결선 설정</p>
-        <LabelRow label="스트링 결선 수량">
-          <div className="flex items-center gap-1">
-            <NumInput value={modulesPerString} min={0} max={100} step={1} onChange={setModulesPerString} />
-            <span className="text-xs text-gray-400">개/스트링</span>
+          <div className="border-t pt-2.5 mt-0.5">
+            <LabelRow label="스트링 결선 수량">
+              <div className="flex items-center gap-1">
+                <NumInput value={modulesPerString} min={0} max={100} step={1} onChange={setModulesPerString} />
+                <span className="text-xs text-gray-400">개/스트링</span>
+              </div>
+            </LabelRow>
+            <p className="text-xs text-gray-400 mt-1.5">0 입력 시 결선 조정 없음</p>
           </div>
-        </LabelRow>
-        <p className="text-xs text-gray-400 mt-2">0 입력 시 결선 조정 없음</p>
+        </div>
       </div>
 
       {/* 선택 영역 */}
@@ -707,6 +695,15 @@ export default function ModuleLayoutPanel({
           </div>
         )
       )}
+
+      {/* 발전량 파라미터 (최하단) */}
+      <div className="bg-white border rounded-lg p-4">
+        <p className="text-xs font-semibold text-gray-600 mb-3">발전량 파라미터</p>
+        <div className="space-y-3">
+          <SliderParam label={`일평균 일조시간 ${peakSunHours}h`} min={2.5} max={5} step={0.1} value={peakSunHours} onChange={setPeakSunHours} />
+          <SliderParam label={`시스템 효율 ${systemEfficiency}%`} min={70} max={95} step={1} value={systemEfficiency} onChange={setSystemEfficiency} />
+        </div>
+      </div>
 
       {inclusions.length === 0 && (
         <div className="flex-1 flex items-center justify-center text-gray-400 text-sm text-center px-4">
