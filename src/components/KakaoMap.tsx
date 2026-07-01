@@ -303,6 +303,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
   const renderModulesRef = useRef<any>(null);
   const zoneAdjustsRef = useRef<ZoneAdjust[]>([]);
   const deletedModuleKeysRef = useRef<Set<string>[]>([]);
+  const deleteHistoryRef = useRef<{ zoneIndex: number; key: string }[]>([]);
+  const [deleteHistoryCount, setDeleteHistoryCount] = useState(0);
   const onLocationDetectedRef = useRef(onLocationDetected);
   const [isDragMode, setIsDragMode] = useState(false);
   const isDragModeRef = useRef(false);
@@ -385,7 +387,10 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
         poly.on("click", (e: any) => {
           L.DomEvent.stop(e);
           if (!deletedModuleKeysRef.current[zoneIndex]) deletedModuleKeysRef.current[zoneIndex] = new Set();
-          deletedModuleKeysRef.current[zoneIndex].add(moduleKey(corners));
+          const key = moduleKey(corners);
+          deletedModuleKeysRef.current[zoneIndex].add(key);
+          deleteHistoryRef.current.push({ zoneIndex, key });
+          setDeleteHistoryCount(deleteHistoryRef.current.length);
           renderModules();
         });
         moduleLayersRef.current.push(poly);
@@ -544,6 +549,7 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       if (stored) setRecentSearches(JSON.parse(stored));
     } catch {}
   }, []);
+
 
   const saveRecentSearch = useCallback((query: string) => {
     setRecentSearches(prev => {
@@ -1035,6 +1041,29 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
 
   const handleSearch = useCallback(() => { performSearch(searchQuery); }, [searchQuery, performSearch]);
 
+  const undoLastModuleDelete = useCallback(() => {
+    const last = deleteHistoryRef.current.pop();
+    if (!last) return;
+    const set = deletedModuleKeysRef.current[last.zoneIndex];
+    if (set) set.delete(last.key);
+    setDeleteHistoryCount(deleteHistoryRef.current.length);
+    renderModulesRef.current?.();
+  }, []);
+
+  // Ctrl+Z: 마지막으로 클릭 삭제한 모듈 복구
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        if (deleteHistoryRef.current.length > 0) {
+          e.preventDefault();
+          undoLastModuleDelete();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undoLastModuleDelete]);
+
   const clearDrawing = useCallback(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
@@ -1046,6 +1075,9 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
     if (parcelPolygonRef.current) { parcelPolygonRef.current.remove(); parcelPolygonRef.current = null; }
     setPolygonCount(0);
     setExclusionCount(0);
+    deletedModuleKeysRef.current = [];
+    deleteHistoryRef.current = [];
+    setDeleteHistoryCount(0);
     onAreasChange([]);
     renderModules();
   }, [cancelCurrentDrawing, onAreasChange, renderModules]);
@@ -1264,6 +1296,11 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       zoneCapacitiesRef.current = zoneCapacitiesRef.current.filter((_, i) => i !== index);
       zoneAdjustsRef.current = zoneAdjustsRef.current.filter((_, i) => i !== index);
       deletedModuleKeysRef.current = deletedModuleKeysRef.current.filter((_, i) => i !== index);
+      // 삭제된 구역 관련 이력 제거, 나머지 구역 인덱스 재조정
+      deleteHistoryRef.current = deleteHistoryRef.current
+        .filter(h => h.zoneIndex !== index)
+        .map(h => h.zoneIndex > index ? { ...h, zoneIndex: h.zoneIndex - 1 } : h);
+      setDeleteHistoryCount(deleteHistoryRef.current.length);
       setPolygonCount(polygonsRef.current.length);
       notifyAreasRef.current?.();
     },
@@ -1359,6 +1396,8 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
       zoneAdjustsRef.current = [];
       zoneCapacitiesRef.current = [];
       deletedModuleKeysRef.current = [];
+      deleteHistoryRef.current = [];
+      setDeleteHistoryCount(0);
       setPolygonCount(0);
       setExclusionCount(0);
 
@@ -1480,6 +1519,13 @@ const LeafletMap = forwardRef<KakaoMapHandle, KakaoMapProps>(function LeafletMap
               <button onClick={removeLastExclusion}
                 className="px-3 py-2 bg-red-300 text-white rounded hover:bg-red-400 text-sm">
                 제외 삭제
+              </button>
+            )}
+            {deleteHistoryCount > 0 && (
+              <button onClick={undoLastModuleDelete}
+                title="Ctrl+Z"
+                className="px-3 py-2 bg-slate-500 text-white rounded hover:bg-slate-600 text-sm font-medium">
+                ↩ 되돌리기 ({deleteHistoryCount})
               </button>
             )}
             <button onClick={clearDrawing}
